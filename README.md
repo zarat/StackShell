@@ -1,3 +1,3 @@
 # StackShell
 
-A reference implementation of [ScriptStack](https://github.com/zarat/ScriptStack).
+Download [ScriptStack](https://github.com/zarat/ScriptStack), add a reference to each project and build it. A tutorial is coming soon.
