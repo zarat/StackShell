@@ -1,5 +1,7 @@
 # StackShell
 
+Create your own scripting language or extend a project with scripting capabilities.
+
 ### Download
 
 [ScriptStack](https://github.com/zarat/ScriptStack) is included in the download. You can also download the library directly from [ScriptStack](https://github.com/zarat/ScriptStack). Add a reference to ScriptStack.dll in every project.
