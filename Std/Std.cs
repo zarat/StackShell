@@ -24,7 +24,7 @@ namespace ScriptStack
             routines.Add(routine);
             routine = new Routine(typeof(int), "read", "Einen einzelnen Tastenanschlag von der Konsole lesen.");
             routines.Add(routine);
-            routine = new Routine(typeof(bool), "readline", "Eine Zeile von der Konsole lesen.");
+            routine = new Routine(typeof(string), "readline", "Eine Zeile von der Konsole lesen.");
             routines.Add(routine);
 
             exportedRoutines = routines.AsReadOnly();
