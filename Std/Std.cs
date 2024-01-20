@@ -1,10 +1,4 @@
-using System;
-using System.IO;
-using System.Collections;
-using System.Collections.Generic;
 using System.Collections.ObjectModel;
-
-using ScriptStack;
 using ScriptStack.Runtime;
 
 namespace ScriptStack
