@@ -106,12 +106,95 @@ namespace ScriptStack
         }
     }
 
+    public class UdpServer
+    {
+        private UdpClient m_udpClient;
+        private List<IPEndPoint> m_clientEndpoints;
+        private Queue<string> m_udpMessageQueue;
+        private object m_udpQueueLock = new object();
+
+        private Action<string> m_udpMessageHandler;
+
+        public UdpServer(int port, Action<string> udpMessageHandler)
+        {
+            m_udpClient = new UdpClient(port);
+            m_clientEndpoints = new List<IPEndPoint>();
+            m_udpMessageQueue = new Queue<string>();
+            m_udpMessageHandler = udpMessageHandler;
+
+            Thread udpMessageProcessingThread = new Thread(ProcessUdpMessages);
+            udpMessageProcessingThread.IsBackground = true;
+            udpMessageProcessingThread.Start();
+        }
+
+        public void Start()
+        {
+            Thread receiveUdpMessagesThread = new Thread(ReceiveUdpMessages);
+            receiveUdpMessagesThread.IsBackground = true;
+            receiveUdpMessagesThread.Start();
+        }
+
+        private void ReceiveUdpMessages()
+        {
+            while (true)
+            {
+                IPEndPoint clientEndpoint = new IPEndPoint(IPAddress.Any, 0);
+                byte[] receiveBytes = m_udpClient.Receive(ref clientEndpoint);
+                string receivedData = Encoding.UTF8.GetString(receiveBytes);
+
+                EnqueueUdpMessage(receivedData, clientEndpoint);
+            }
+        }
+
+        private void EnqueueUdpMessage(string message, IPEndPoint clientEndpoint)
+        {
+            lock (m_udpQueueLock)
+            {
+                m_clientEndpoints.Add(clientEndpoint);
+                m_udpMessageQueue.Enqueue(message);
+            }
+        }
+
+        private void ProcessUdpMessages()
+        {
+            while (true)
+            {
+                string message = DequeueUdpMessage();
+                if (message != null)
+                {
+                    m_udpMessageHandler(message);
+                    Console.WriteLine("Received UDP Message: " + message);
+                }
+            }
+        }
+
+        private string DequeueUdpMessage()
+        {
+            lock (m_udpQueueLock)
+            {
+                if (m_udpMessageQueue.Count > 0)
+                {
+                    m_clientEndpoints.RemoveAt(0); // Remove client endpoint associated with the message
+                    return m_udpMessageQueue.Dequeue();
+                }
+                return null;
+            }
+        }
+
+        public void Stop()
+        {
+            m_udpClient.Close();
+        }
+    }
+
     public class Network : Model
     {
         private static ReadOnlyCollection<Routine> exportedRoutines;
         private List<TcpServer> m_tcpServers;
         private List<string> m_receivedMessages; 
-        private int m_serverCounter = 0; 
+        private int m_serverCounter = 0;
+
+        private List<UdpServer> m_udpServers;
 
         public Network()
         {
@@ -122,9 +205,16 @@ namespace ScriptStack
             routines.Add(new Routine(typeof(void), "stopTcpServer", typeof(int), "Stoppe einen TCP-Server."));
             routines.Add(new Routine(typeof(string), "getNextMessage", "Hole die nächste Nachricht aus der Liste der empfangenen Nachrichten."));
 
+            routines.Add(new Routine(typeof(int), "startUdpServer", typeof(int), "Starte einen UDP-Server."));
+            routines.Add(new Routine(typeof(void), "stopUdpServer", typeof(int), "Stoppe einen UDP-Server."));
+            routines.Add(new Routine(typeof(string), "getNextUdpMessage", "Hole die nächste Nachricht aus der Liste der empfangenen UDP-Nachrichten."));
+
             exportedRoutines = routines.AsReadOnly();
+
             m_tcpServers = new List<TcpServer>();
             m_receivedMessages = new List<string>();
+
+            m_udpServers = new List<UdpServer>();
         }
 
         public object Invoke(string strFunctionName, List<object> listParameters)
@@ -158,10 +248,38 @@ namespace ScriptStack
                 return nextMessage.Trim();
             }
 
+            if (strFunctionName == "startUdpServer")
+            {
+                int port = (int)listParameters[0];
+
+                UdpServer udpServer = new UdpServer(port, HandleScriptUdpMessage);
+                udpServer.Start();
+                m_udpServers.Add(udpServer);
+
+                return m_serverCounter++;
+            }
+
+            if (strFunctionName == "stopUdpServer")
+            {
+                int serverId = (int)listParameters[0];
+                if (serverId >= 0 && serverId < m_udpServers.Count)
+                {
+                    UdpServer udpServer = m_udpServers[serverId];
+                    udpServer.Stop();
+                    m_udpServers.RemoveAt(serverId);
+                }
+                return null;
+            }
+
             return null;
         }
 
         private void HandleScriptMessage(string message)
+        {
+            EnqueueReceivedMessage(message);
+        }
+
+        private void HandleScriptUdpMessage(string message)
         {
             EnqueueReceivedMessage(message);
         }
@@ -192,5 +310,6 @@ namespace ScriptStack
         {
             get { return exportedRoutines; }
         }
+
     }
 }
