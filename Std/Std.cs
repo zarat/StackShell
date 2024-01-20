@@ -33,6 +33,8 @@ namespace ScriptStack
             routines.Add(new Routine(typeof(ScriptStack.Runtime.ArrayList), "freadb", typeof(int), "Binärdatei als Byte Array aus einer geöffneten Datei lesen."));
             routines.Add(new Routine(typeof(int), "fwriteb", typeof(int), typeof(ScriptStack.Runtime.ArrayList), "Binärdaten in eine geöffnete Datei schreiben."));
 
+            routines.Add(new Routine(typeof(string), "popen", typeof(string), typeof(string), "Rufe einen Prozess mit Argumenten auf und speichere die Ausgabe in einem String."));
+
             exportedRoutines = routines.AsReadOnly();
 
             m_openFiles = new Dictionary<int, FileStream>();
@@ -216,25 +218,37 @@ namespace ScriptStack
                 }
             }
 
+            if(strFunctionName == "popen")
+            {
+            
+                string executablePath = (string)listParameters[0];
+                string arguments = (string)listParameters[1];
+            
+                using (Process process = new Process())
+                {
+                    ProcessStartInfo startInfo = new ProcessStartInfo
+                    {
+                        FileName = executablePath,
+                        Arguments = arguments,
+                        RedirectStandardOutput = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    };
+            
+                    process.StartInfo = startInfo;
+                    process.Start();
+                    process.WaitForExit();
+
+                    using (StreamReader reader = process.StandardOutput)
+                    {
+                        return reader.ReadToEnd();
+                    }
+                }
+                
+            }
+
             return null;
 
-        }
-
-        static byte[] ConvertListToByteArray(List<int> intList)
-        {
-            List<byte[]> byteArrays = new List<byte[]>();
-            foreach (int intValue in intList)
-            {
-                byteArrays.Add(BitConverter.GetBytes(intValue));
-            }
-            byte[] resultByteArray = new byte[byteArrays.Sum(arr => arr.Length)];
-            int offset = 0;
-            foreach (byte[] byteArray in byteArrays)
-            {
-                Buffer.BlockCopy(byteArray, 0, resultByteArray, offset, byteArray.Length);
-                offset += byteArray.Length;
-            }
-            return resultByteArray;
         }
 
         public ReadOnlyCollection<Routine> Routines
