@@ -50,14 +50,18 @@ namespace ScriptStack
         {
             while (true)
             {
-                byte[] buffer = new byte[1024];
-                int bytesRead = clientSocket.Receive(buffer);
-                string receivedData = Encoding.UTF8.GetString(buffer, 0, bytesRead);
+                try 
+                {
+                    byte[] buffer = new byte[1024];
+                    int bytesRead = clientSocket.Receive(buffer);
+                    string receivedData = Encoding.UTF8.GetString(buffer, 0, bytesRead);
 
-                EnqueueMessage(receivedData);
+                    EnqueueMessage(receivedData);
 
-                byte[] sendData = Encoding.UTF8.GetBytes("Server received: " + receivedData);
-                clientSocket.Send(sendData);
+                    byte[] sendData = Encoding.UTF8.GetBytes("Server received: " + receivedData);
+                    clientSocket.Send(sendData);
+                }
+                catch(Exception e) { }
             }
         }
 
