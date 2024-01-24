@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Xml.Linq;
 using ScriptStack.Runtime;
 
 namespace ScriptStack
@@ -23,14 +24,86 @@ namespace ScriptStack
             vmParams.Add(typeof(string)); // switch name
             vmParams.Add(typeof(string)); // memory GB
             routines.Add(new Routine((Type)null, "createVM", vmParams, "Erstelle eine neue VM. vmname, vmpath, switchName, memory."));
+
             routines.Add(new Routine((Type)null, "createDisk", typeof(string), typeof(string), "Erstelle eine neue VHDX. vhdxPath, vhdxSize.")); // vhdpath, vhdsize
-            routines.Add(new Routine((Type)null, "assignDisk", typeof(string), typeof(string), "Weise eine VHDX einer VM zu. vmName, vhdxPath.")); // vhdpath, vhdsize
+            
+            List<Type> assignDiskParams = new List<Type>();
+            assignDiskParams.Add(typeof(string));  // VM Name
+            assignDiskParams.Add(typeof(string)); // Path to disk
+            assignDiskParams.Add(typeof(string)); // Controller type
+            assignDiskParams.Add(typeof(int)); // Controller Index
+            assignDiskParams.Add(typeof(int)); // Slot Index
+            routines.Add(new Routine((Type)null, "assignDisk", assignDiskParams, "Weise eine VHDX einer VM zu. vmName, vhdxPath, controllertype, controllerindex, slot.")); // vhdpath, vhdsize
+            
             routines.Add(new Routine((Type)null, "removeVM", typeof(string), "Entferne eine VM. vmName.")); // vmName
-            routines.Add(new Routine((Type)null, "removeDisk", typeof(string), typeof(string), "Entferne eine VHDX von einer VM. vmName, vhdxPath.")); // vhdpath, vhdsize
-            routines.Add(new Routine((Type)null, "addIsoImage", typeof(string), typeof(string), "Lege ein ISO Image in das DVD Laufwerk einer VM. vmName, isoPath.")); // vhdpath, vhdsize
+            
+            List<Type> removeDiskParams = new List<Type>();
+            removeDiskParams.Add(typeof(string)); // VM Name
+            removeDiskParams.Add(typeof(string)); // Controller Type
+            removeDiskParams.Add(typeof(int)); // Controller Index
+            removeDiskParams.Add(typeof(int)); // Slot Id
+            routines.Add(new Routine((Type)null, "removeDisk", removeDiskParams, "Entferne eine VHDX von einer VM. vmName, controllerType, controllerIndex, slotId.")); // vhdpath, vhdsize
+
+            // \todo Add ISO to specific drive
+            List<Type> addIsoImageParams = new List<Type>();
+            addIsoImageParams.Add(typeof(string)); // VM Name
+            addIsoImageParams.Add(typeof(string)); // Image Path
+            addIsoImageParams.Add(typeof(int)); // Controller ID
+            addIsoImageParams.Add(typeof(int)); // Slot Id
+            routines.Add(new Routine((Type)null, "addIsoImage", addIsoImageParams, "Lege ein ISO Image in das DVD Laufwerk einer VM. vmName, isoPath, controllerId, slotId.")); // vhdpath, vhdsize
+
+            routines.Add(new Routine((Type)null, "addDVDDrive", typeof(string), typeof(int), typeof(int), "Erstelle ein leeres DVD Laufwerk. vmName, controllerId, slotId"));
+            routines.Add(new Routine((Type)null, "addScsiController", typeof(string), "Erstelle einen neuen SCSI Controller. vmName."));
+
+            // todo Bootreihenfolge
+            // bootorder im format "'CD', 'IDE', 'LegacyNetworkAdapter', 'Floppy'"
+            routines.Add(new Routine((Type)null, "changeBootOrder", typeof(string), typeof(string), "Änder die Bootreihenfolge einer VM. vmName, bootOrder."));
 
             exportedRoutines = routines.AsReadOnly();
 
+
+        }
+
+        // \todo success/error indicator!
+        private string ExecutePowershellScript(string script)
+        {
+
+            string powerShellScript = script;
+            string resultStr;
+            string powerShellExe = @"powershell.exe";
+
+            using (Process process = new Process())
+            {
+                ProcessStartInfo startInfo = new ProcessStartInfo
+                {
+                    FileName = powerShellExe,
+                    RedirectStandardInput = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+
+                process.StartInfo = startInfo;
+                process.Start();
+
+                process.StandardInput.WriteLine(powerShellScript);
+                process.StandardInput.Close();
+
+                string output = process.StandardOutput.ReadToEnd();
+                string error = process.StandardError.ReadToEnd();
+
+                process.WaitForExit();
+
+                if (!string.IsNullOrEmpty(error))
+                {
+                    resultStr = "PowerShell-Fehler: " + error;
+                }
+
+                resultStr = output;
+            }
+
+            return resultStr;
 
         }
 
@@ -40,71 +113,16 @@ namespace ScriptStack
             if (strFunctionName == "createVM")
             {
 
-                /*
-                using (var app = new Process())
-                {
-                    app.StartInfo.FileName = "powershell.exe";
-                    app.StartInfo.Arguments = "New-VM -Name \"Neue VM\" -Path \"D:\\NeueVM\" -MemoryStartupBytes 2GB -BootDevice CD -SwitchName \"Default Switch\"";
-                    app.EnableRaisingEvents = true;
-                    app.StartInfo.RedirectStandardOutput = true;
-                    app.StartInfo.RedirectStandardError = true;
-                    // Must not set true to execute PowerShell command
-                    app.StartInfo.UseShellExecute = false;
-                    app.Start();
-                    using (var o = app.StandardOutput)
-                    {
-                        return o.ReadToEndAsync();
-                    }
-                }
-                */
-
                 string vmName = (string)listParameters[0];
                 string vmPath = (string)listParameters[1];
                 string switchName = (string)listParameters[2];
                 string memoryBytes = (string)listParameters[3]; // 2GB
 
-                bool ok = true;
-
                 string powerShellScript = $@"
 New-VM -Name '{vmName}' -Path '{vmPath}' -MemoryStartupBytes {memoryBytes} -SwitchName '{switchName}'
 ";
 
-                string powerShellExe = @"powershell.exe";
-
-                using (Process process = new Process())
-                {
-                    ProcessStartInfo startInfo = new ProcessStartInfo
-                    {
-                        FileName = powerShellExe,
-                        RedirectStandardInput = true,
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    };
-
-                    process.StartInfo = startInfo;
-                    process.Start();
-
-                    process.StandardInput.WriteLine(powerShellScript);
-                    process.StandardInput.Close();
-
-                    string output = process.StandardOutput.ReadToEnd();
-                    string error = process.StandardError.ReadToEnd();
-
-                    process.WaitForExit();
-
-                    if (!string.IsNullOrEmpty(error))
-                    {
-                        Console.WriteLine("PowerShell-Fehler: " + error);
-                        ok = false;
-                    }
-                }
-
-                if(ok)
-                {
-                    Console.WriteLine("VM '" + vmName + "' erfolgreich erstellt!");
-                }
+                return ExecutePowershellScript(powerShellScript);
 
             }
 
@@ -114,46 +132,11 @@ New-VM -Name '{vmName}' -Path '{vmPath}' -MemoryStartupBytes {memoryBytes} -Swit
                 string vhdPath = (string)listParameters[0];
                 string vhdSize = (string)listParameters[1];
 
-                bool ok = true;
-
                 string powerShellScript = $@"
 New-VHD -Path '{vhdPath}' -SizeBytes {vhdSize} -Dynamic
 ";
 
-                string powerShellExe = @"powershell.exe";
-
-                using (Process process = new Process())
-                {
-                    ProcessStartInfo startInfo = new ProcessStartInfo
-                    {
-                        FileName = powerShellExe,
-                        RedirectStandardInput = true,
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    };
-
-                    process.StartInfo = startInfo;
-                    process.Start();
-
-                    process.StandardInput.WriteLine(powerShellScript);
-                    process.StandardInput.Close();
-
-                    string output = process.StandardOutput.ReadToEnd();
-                    string error = process.StandardError.ReadToEnd();
-
-                    process.WaitForExit();
-
-                    if (!string.IsNullOrEmpty(error))
-                    {
-                        Console.WriteLine("PowerShell-Fehler: " + error);
-                        ok = false;
-                    }
-                    
-                }
-
-                Console.WriteLine("VHDX '" + vhdPath + "' erfolgreich erstellt!");
+                return ExecutePowershellScript(powerShellScript);
 
             }
 
@@ -162,47 +145,16 @@ New-VHD -Path '{vhdPath}' -SizeBytes {vhdSize} -Dynamic
 
                 string vmName = (string)listParameters[0];
                 string vhdPath = (string)listParameters[1];
-
-                bool ok = true;
+                
+                string controllerType = (string)listParameters[2];
+                int controllerId = (int)listParameters[3];
+                int slotId = (int)listParameters[4];
 
                 string powerShellScript = $@"
-Add-VMHardDiskDrive -VMName '{vmName}' -Path '{vhdPath}'
+Add-VMHardDiskDrive -VMName '{vmName}' -Path '{vhdPath}' -ControllerType '{controllerType}' -ControllerNumber {controllerId} -ControllerLocation {slotId}
 ";
 
-                string powerShellExe = @"powershell.exe";
-
-                using (Process process = new Process())
-                {
-                    ProcessStartInfo startInfo = new ProcessStartInfo
-                    {
-                        FileName = powerShellExe,
-                        RedirectStandardInput = true,
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    };
-
-                    process.StartInfo = startInfo;
-                    process.Start();
-
-                    process.StandardInput.WriteLine(powerShellScript);
-                    process.StandardInput.Close();
-
-                    string output = process.StandardOutput.ReadToEnd();
-                    string error = process.StandardError.ReadToEnd();
-
-                    process.WaitForExit();
-
-                    if (!string.IsNullOrEmpty(error))
-                    {
-                        Console.WriteLine("PowerShell-Fehler: " + error);
-                        ok = false;
-                    }
-                    
-                }
-
-                Console.WriteLine("VHDX '" + vhdPath + "' erfolgreich in '" + vmName + "' eingehängt!");
+                return ExecutePowershellScript(powerShellScript);
 
             }
 
@@ -214,98 +166,24 @@ Add-VMHardDiskDrive -VMName '{vmName}' -Path '{vhdPath}'
                 string powerShellScript = $@"
 Remove-VM -VMName '{vmName}' -Force
 ";
-                bool ok = true;
 
-                string powerShellExe = @"powershell.exe";
-
-                using (Process process = new Process())
-                {
-                    ProcessStartInfo startInfo = new ProcessStartInfo
-                    {
-                        FileName = powerShellExe,
-                        RedirectStandardInput = true,
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    };
-
-                    process.StartInfo = startInfo;
-                    process.Start();
-
-                    process.StandardInput.WriteLine(powerShellScript);
-                    process.StandardInput.Close();
-
-                    string output = process.StandardOutput.ReadToEnd();
-                    string error = process.StandardError.ReadToEnd();
-
-                    process.WaitForExit();
-
-                    if (!string.IsNullOrEmpty(error))
-                    {
-                        Console.WriteLine("PowerShell-Fehler: " + error);
-                        ok = false;
-                    }   
-
-                }
-
-                if (ok)
-                {
-                    Console.WriteLine("VM \"" + vmName + "\" erfolgreich entfernt!");
-                }
+                return ExecutePowershellScript(powerShellScript);
 
             }
 
-            // TODO
             if (strFunctionName == "removeDisk")
             {
 
                 string vmName = (string)listParameters[0];
-                string vhdPath = (string)listParameters[1];
+                string controllerType = (string)listParameters[1];
+                int controllerIndex = (int)listParameters[2];
+                int diskIndex = (int)listParameters[3];
 
                 string powerShellScript = $@"
-Remove-VMHardDiskDrive -VMName '{vmName}' -ControllerType IDE -ControllerNumber 0 -ControllerLocation 0
+Remove-VMHardDiskDrive -VMName '{vmName}' -ControllerType '{controllerType}' -ControllerNumber {controllerIndex} -ControllerLocation {diskIndex}
 ";
 
-                string powerShellExe = @"powershell.exe";
-
-                bool ok = true;
-
-                using (Process process = new Process())
-                {
-                    ProcessStartInfo startInfo = new ProcessStartInfo
-                    {
-                        FileName = powerShellExe,
-                        RedirectStandardInput = true,
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    };
-
-                    process.StartInfo = startInfo;
-                    process.Start();
-
-                    process.StandardInput.WriteLine(powerShellScript);
-                    process.StandardInput.Close();
-
-                    string output = process.StandardOutput.ReadToEnd();
-                    string error = process.StandardError.ReadToEnd();
-
-                    process.WaitForExit();
-
-                    if (!string.IsNullOrEmpty(error))
-                    {
-                        Console.WriteLine("PowerShell-Fehler: " + error);
-                        ok = false;
-                    }
-
-                }
-
-                if (ok)
-                {
-                    Console.WriteLine("VHDX erfolgreich von '" + vmName + "' entfernt!");
-                }
+                return ExecutePowershellScript(powerShellScript);
 
             }
 
@@ -314,54 +192,65 @@ Remove-VMHardDiskDrive -VMName '{vmName}' -ControllerType IDE -ControllerNumber 
 
                 string vmName = (string)listParameters[0];
                 string isoPath = (string)listParameters[1];
+                int controllerId = (int)listParameters[2];
+                int slotId = (int)listParameters[3];
 
                 string powerShellScript = $@"
-Add-VMDvdDrive -VMName '{vmName}' -Path '{isoPath}'
+Set-VMDvdDrive -VMName '{vmName}' -Path '{isoPath}' -ControllerNumber {controllerId} -ControllerLocation {slotId}
 ";
 
-                string powerShellExe = @"powershell.exe";
-
-                bool ok = true;
-
-                using (Process process = new Process())
-                {
-                    ProcessStartInfo startInfo = new ProcessStartInfo
-                    {
-                        FileName = powerShellExe,
-                        RedirectStandardInput = true,
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    };
-
-                    process.StartInfo = startInfo;
-                    process.Start();
-
-                    process.StandardInput.WriteLine(powerShellScript);
-                    process.StandardInput.Close();
-
-                    string output = process.StandardOutput.ReadToEnd();
-                    string error = process.StandardError.ReadToEnd();
-
-                    process.WaitForExit();
-
-                    if (!string.IsNullOrEmpty(error))
-                    {
-                        Console.WriteLine("PowerShell-Fehler: " + error);
-                        ok = false;
-                    }
-
-                }
-
-                if (ok)
-                {
-                    Console.WriteLine("ISO Image '" + isoPath + "' erfolgreich in '" + vmName + "' eingelegt!");
-                }
+                return ExecutePowershellScript(powerShellScript);
 
             }
 
+            if(strFunctionName == "addDVDDrive")
+            {
 
+                string vmName = (string)listParameters[0];
+                int controllerId = (int)listParameters[1];
+                int slotId = (int)listParameters[2];
+
+                string powerShellScript = $@"
+Add-VMDvdDrive -VMName '{vmName}' -ControllerNumber {controllerId} -ControllerLocation {slotId}
+";
+
+                return ExecutePowershellScript(powerShellScript);
+
+            }
+
+            if (strFunctionName == "addScsiController")
+            {
+
+                string vmName = (string)listParameters[0];
+
+                string powerShellScript = $@"
+Add-VMScsiController -VMName '{vmName}'
+";
+
+                return ExecutePowershellScript(powerShellScript);
+
+            }
+
+            if(strFunctionName == "changeBootOrder")
+            {
+
+                string vmName = (string)listParameters[0];
+                string startupOrder = (string)listParameters[1];
+
+                string[] startupOrderArray = startupOrder.Split(',');
+                for (int i = 0; i < startupOrderArray.Length; i++)
+                {
+                    startupOrderArray[i] = startupOrderArray[i].Trim();
+                }
+
+                string powershellScript = $@"
+Set-VMBios -VMName '{vmName}' -StartupOrder @({string.Join(", ", startupOrderArray)})
+";
+
+                return ExecutePowershellScript(powershellScript);
+
+            }
+            
             return null;
 
         }
