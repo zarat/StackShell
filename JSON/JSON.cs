@@ -1,3 +1,4 @@
+using ScriptStack.Compiler;
 using ScriptStack.Runtime;
 using System;
 using System.Collections.Generic;
