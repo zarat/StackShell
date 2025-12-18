@@ -27,7 +27,7 @@ namespace ScriptStack
             routines.Add(new Routine((Type)null, "xml_parse", (Type)null, "Erstelle ein XML Dokument (XDocument) aus einem String."));
             routines.Add(new Routine(typeof(string), "xml_string", (Type)null, "Gibt das XML als String zurück."));
 
-            routines.Add(new Routine((Type)null, "xml_select", (Type)null, (Type)null, "Wählt einen Knoten per XPath aus (gibt XElement/XAttribute/XText zurück oder null)."));
+            routines.Add(new Routine((Type)null, "xml_select", (Type)null, (Type)null, "Wählt einen(!) Knoten per XPath aus (gibt XElement/XAttribute/XText zurück oder null)."));
             routines.Add(new Routine(typeof(ScriptStack.Runtime.ArrayList), "xml_select_all", (Type)null, (Type)null, "Wählt mehrere Knoten per XPath aus (gibt ArrayList von Nodes zurück)."));
 
             routines.Add(new Routine(typeof(string), "xml_value", (Type)null, "Liest den String-Value eines Nodes (XElement/XAttribute/XText)"));
@@ -258,6 +258,3 @@ namespace ScriptStack
     }
 
 }
-
-
-
