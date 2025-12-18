@@ -1,4 +1,3 @@
-using ScriptStack.Compiler;
 using ScriptStack.Runtime;
 using System;
 using System.Collections.Generic;
@@ -31,6 +30,12 @@ namespace ScriptStack
             routines.Add(new Routine(typeof(int), "json_count", (Type)null, "Anzahl Elemente (Array) / Properties (Object)."));
             routines.Add(new Routine(typeof(ScriptStack.Runtime.ArrayList), "json_keys", (Type)null, "Gibt alle Keys eines JSON-Objects als array zurück."));
             routines.Add(new Routine(typeof(bool), "json_has", (Type)null, (Type)null, "Prüft ob ein JSON-Path existiert (und nicht null ist)."));
+
+            routines.Add(new Routine((Type)null, "json_iter", (Type)null, "Iterator für JsonObject/JsonArray (oder raw json string)."));
+            routines.Add(new Routine(typeof(bool), "json_next", (Type)null, "Iterator: nächstes Element. true wenn vorhanden."));
+            routines.Add(new Routine(typeof(string), "json_key", (Type)null, "Iterator: aktueller Key (Object) oder null (Array)."));
+            routines.Add(new Routine(typeof(int), "json_index", (Type)null, "Iterator: aktueller Index (Array) oder -1 (Object)."));
+            routines.Add(new Routine((Type)null, "json_value", (Type)null, "Iterator: aktueller Wert (primitive oder JsonNode)."));
 
             exportedRoutines = routines.AsReadOnly();
 
@@ -207,7 +212,38 @@ namespace ScriptStack
                 // Dafür müsste GetByPath unterscheiden können zwischen "missing" und "present but null".
             }
 
+            if (routine == "json_iter")
+            {
+                JsonNode node = CoerceToNode(parameters[0]);
+                return new JsonIterator(node);
+            }
+
+            if (routine == "json_next")
+            {
+                var it = (JsonIterator)parameters[0];
+                return it.MoveNext();
+            }
+
+            if (routine == "json_key")
+            {
+                var it = (JsonIterator)parameters[0];
+                return it.CurrentKey; // bei array: null
+            }
+
+            if (routine == "json_index")
+            {
+                var it = (JsonIterator)parameters[0];
+                return it.CurrentIndex; // bei object: -1
+            }
+
+            if (routine == "json_value")
+            {
+                var it = (JsonIterator)parameters[0];
+                return UnboxNode(it.CurrentValue);
+            }
+
             return null;
+
         }
 
         public ReadOnlyCollection<Routine> Routines
@@ -450,6 +486,139 @@ namespace ScriptStack
                 return segments;
             }
         
+        }
+
+        private sealed class JsonIterator
+        {
+            private readonly JsonNode _root;
+            private IEnumerator<KeyValuePair<string, JsonNode?>>? _objEnum;
+            private IEnumerator<JsonNode?>? _arrEnum;
+
+            private bool _hasCurrent;
+            private string? _currentKey;
+            private int _currentIndex;
+            private JsonNode? _currentValue;
+
+            public JsonIterator(JsonNode root)
+            {
+                _root = root ?? throw new ArgumentNullException(nameof(root));
+                Reset();
+            }
+
+            public void Reset()
+            {
+                _hasCurrent = false;
+                _currentKey = null;
+                _currentIndex = -1;
+                _currentValue = null;
+
+                _objEnum = null;
+                _arrEnum = null;
+
+                if (_root is JsonObject obj)
+                    _objEnum = obj.GetEnumerator();
+                else if (_root is JsonArray arr)
+                    _arrEnum = arr.GetEnumerator();
+                else
+                    throw new InvalidOperationException("json_iter erwartet JsonObject oder JsonArray.");
+            }
+
+            public bool MoveNext()
+            {
+                if (_objEnum != null)
+                {
+                    if (!_objEnum.MoveNext())
+                    {
+                        _hasCurrent = false;
+                        return false;
+                    }
+
+                    _hasCurrent = true;
+                    _currentKey = _objEnum.Current.Key;
+                    _currentIndex = -1;
+                    _currentValue = _objEnum.Current.Value;
+                    return true;
+                }
+
+                if (_arrEnum != null)
+                {
+                    if (!_arrEnum.MoveNext())
+                    {
+                        _hasCurrent = false;
+                        return false;
+                    }
+
+                    _hasCurrent = true;
+                    _currentKey = null;
+                    _currentIndex = _currentIndex < 0 ? 0 : _currentIndex + 1;
+                    _currentValue = _arrEnum.Current;
+                    return true;
+                }
+
+                _hasCurrent = false;
+                return false;
+            }
+
+            public string? CurrentKey => _hasCurrent ? _currentKey : null;
+            public int CurrentIndex => _hasCurrent ? _currentIndex : -1;
+            public JsonNode? CurrentValue => _hasCurrent ? _currentValue : null;
+        }
+
+        private static object? UnboxNode(JsonNode? node)
+        {
+            if (node is null) return null;
+
+            // Objekt/Array: als JsonNode zurück (damit Script weiter json_get/json_iter nutzen kann)
+            if (node is JsonObject || node is JsonArray) return node;
+
+            if (node is JsonValue v)
+            {
+                // häufig: Backing JsonElement
+                if (v.TryGetValue<JsonElement>(out var je))
+                {
+                    switch (je.ValueKind)
+                    {
+                        case JsonValueKind.String: return je.GetString();
+                        case JsonValueKind.True:
+                        case JsonValueKind.False: return je.GetBoolean();
+                        case JsonValueKind.Null: return null;
+
+                        case JsonValueKind.Number:
+                            if (je.TryGetInt32(out int i32)) return i32;
+                            if (je.TryGetInt64(out long i64)) return i64;
+                            if (je.TryGetDecimal(out decimal dec)) return dec;
+                            if (je.TryGetSingle(out float f32)) return f32;
+                            return je.GetDouble();
+                    }
+                }
+
+                // sonst: direkte Typen
+                if (v.TryGetValue<bool>(out var b)) return b;
+                if (v.TryGetValue<int>(out var i)) return i;
+                if (v.TryGetValue<long>(out var l)) return l;
+                if (v.TryGetValue<decimal>(out var d)) return d;
+                if (v.TryGetValue<double>(out var dbl)) return dbl;
+                if (v.TryGetValue<float>(out var f)) return f;
+                if (v.TryGetValue<string>(out var s)) return s;
+
+                return v.ToJsonString();
+            }
+
+            return null;
+        }
+
+        private static JsonNode CoerceToNode(object? p0)
+        {
+            if (p0 is JsonNode jn) return jn;
+
+            if (p0 is string s)
+            {
+                var n = JsonNode.Parse(s);
+                if (n is null) throw new InvalidOperationException("json_iter: Konnte JSON nicht parsen.");
+                return n;
+            }
+
+            throw new InvalidOperationException("json_iter erwartet JsonNode oder JSON-String.");
         }
 
     }
