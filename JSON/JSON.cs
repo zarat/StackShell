@@ -38,6 +38,9 @@ namespace ScriptStack
             routines.Add(new Routine(typeof(int), "json_index", (Type)null, "Iterator: aktueller Index (Array) oder -1 (Object)."));
             routines.Add(new Routine((Type)null, "json_value", (Type)null, "Iterator: aktueller Wert (primitive oder JsonNode)."));
 
+            routines.Add(new Routine((Type)null, "json_node", (Type)null, "Konvertiert Wert/ArrayList zu JsonNode (JsonObject/JsonArray/JsonValue)."));
+            routines.Add(new Routine(typeof(string), "json_string", (Type)null, "Konvertiert Wert/ArrayList zu JSON-String."));
+
             exportedRoutines = routines.AsReadOnly();
 
         }
@@ -243,6 +246,17 @@ namespace ScriptStack
                 return UnboxNode(it.CurrentValue);
             }
 
+            if (routine == "json_node")
+            {
+                return CoerceToJsonNode(parameters[0]);
+            }
+
+            if (routine == "json_string")
+            {
+                var node = CoerceToJsonNode(parameters[0]);
+                return node is null ? "null" : node.ToJsonString();
+            }
+
             return null;
 
         }
@@ -255,6 +269,76 @@ namespace ScriptStack
             }
         }
 
+        private static JsonNode? CoerceToJsonNode(object? value)
+        {
+            if (value is null) return null;
+
+            // ScriptStack NullReference -> JSON null
+            //if ( value is typeof(ScriptStack.Runtime.NullReference.Instance)) return null;
+
+            // already JsonNode
+            if (value is JsonNode jn) return jn;
+
+            // raw json string allowed
+            if (value is string s)
+            {
+                var t = s.Trim();
+                if ((t.StartsWith("{") && t.EndsWith("}")) || (t.StartsWith("[") && t.EndsWith("]")))
+                    return JsonNode.Parse(s);
+
+                // otherwise treat as string primitive
+                return JsonValue.Create(s);
+            }
+
+            // nested ArrayList
+            if (value is ScriptStack.Runtime.ArrayList arr)
+                return ArrayListToJsonNode(arr);
+
+            // primitives
+            if (value is bool b) return JsonValue.Create(b);
+            if (value is int i32) return JsonValue.Create(i32);
+            if (value is long i64) return JsonValue.Create(i64);
+            if (value is float f32) return JsonValue.Create(f32);
+            if (value is double f64) return JsonValue.Create(f64);
+            if (value is decimal dec) return JsonValue.Create(dec);
+            if (value is char ch) return JsonValue.Create(ch.ToString());
+
+            // fallback: use string representation
+            return JsonValue.Create(value.ToString());
+        }
+
+        private static JsonNode ArrayListToJsonNode(ScriptStack.Runtime.ArrayList arr)
+        {
+            // Decide: JSON array only if keys are exactly 0..n-1 (no gaps), all int
+            int n = arr.Count;
+            bool isDenseArray = true;
+            for (int i = 0; i < n; i++)
+            {
+                if (!arr.ContainsKey(i)) { isDenseArray = false; break; }
+            }
+
+            if (isDenseArray)
+            {
+                var ja = new JsonArray();
+                for (int i = 0; i < n; i++)
+                {
+                    var v = arr[i];
+                    ja.Add(CoerceToJsonNode(v));
+                }
+                return ja;
+            }
+
+            // else: JSON object (keys -> string)
+            var jo = new JsonObject();
+            foreach (var k in arr.Keys)
+            {
+                //var keyString = k is null || ReferenceEquals(k, NullReference.Instance) ? "null" : k.ToString();
+                var keyString = k.ToString();
+                jo[keyString] = CoerceToJsonNode(arr[k]);
+            }
+            return jo;
+        }
+        
         public static class JsonPathNode
         {
 
