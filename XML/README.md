@@ -53,7 +53,12 @@ function XMLTest() {
 
 	// Alternative: Attribut per XPath selektieren und xml_value nutzen
 	var idAttr = xml_select(doc, "/root/item[1]/@id");
-	print(xml_value(idAttr)); // a	
+	print(xml_value(idAttr)); // a
+
+	var it = xml_iter(doc); // default "children"
+	while (xml_next(it)) {
+	  print("" + xml_index(it) + " name=" + xml_name(it) + " val=" + xml_value_it(it));
+	}
 
 }
 ```
