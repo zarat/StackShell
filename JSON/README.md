@@ -70,7 +70,7 @@ function JSONTest() {
 	while(json_next(it)) {
 		var ai = json_index(it);
 		var av = json_value(it);
-		print("items[" + ai + "]=" + av);
+		print("items[" + ai + "] => " + av);
 	}
 	
 }
