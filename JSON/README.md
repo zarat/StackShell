@@ -72,6 +72,15 @@ function JSONTest() {
 		var av = json_value(it);
 		print("items[" + ai + "] => " + av);
 	}
+
+	root = json_parse("{\"items\": { \"a\":1, \"b\":2, \"c\":3 } }");
+	it = json_iter(root);
+	while (json_next(it)) {
+		if (json_is_arr(root))
+			print("" + json_index(it) + " => " + json_value(it));
+		else
+			print("" + json_key(it) + " => " + json_value(it));
+	}
 	
 }
 ```
