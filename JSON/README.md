@@ -1,6 +1,23 @@
 ```Javascript
 function JSONTest() {
 
+	var arr = ["Hello", "World"];
+	
+	// ScriptStack Array als JSON-String anzeigen
+	print(json_string(arr)); // ["Hello", "World"]
+
+	// JSON Node aus ScriptStack Array erstellen
+	var node = json_node(arr);
+	print(json_get(node, "[0]")); // Hello
+	
+	var obj = {"a": "Hello", "b": "World"};
+
+	// ScriptStack Array als JSON-String anzeigen
+	print(json_string(obj)); // {"a":"Hello", "b":"World"}
+	
+	// JSON Node aus ScriptStack Object erstellen
+	print(json_get(json_node(obj), "b")); // World
+	
 	// for Schleife über ein Array
 	var root = json_parse("[\"Hello\", \"World\"]");
 	var n = json_count(root);
