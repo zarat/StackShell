@@ -63,6 +63,16 @@ function main() {
 		else
 			print("" + yaml_key(it) + " => " + yaml_value(it));
 	}
+
+	var node = yaml_get(doc, "");
+	it = yaml_iter(node);
+	while (yaml_next(it)) {
+		if (yaml_is_seq(node)) {
+			print("" + yaml_index(it) + " => " + yaml_value(it));
+		} else {
+			print("" + yaml_key(it) + " => " + yaml_value(it));
+		}
+	}
 	
 }
 ```
