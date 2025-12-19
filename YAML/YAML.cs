@@ -38,6 +38,9 @@ namespace ScriptStack
             routines.Add(new Routine((Type)null, "yaml_node", (Type)null, "Konvertiert Wert/ArrayList zu YamlNode (Mapping/Sequence/Scalar)."));
             routines.Add(new Routine(typeof(string), "yaml_string", (Type)null, "Konvertiert Wert/ArrayList/YamlNode zu YAML-String."));
 
+            routines.Add(new Routine(typeof(bool), "yaml_is_map", (Type)null, "True wenn Node ein Mapping/Object ist."));
+            routines.Add(new Routine(typeof(bool), "yaml_is_seq", (Type)null, "True wenn Node eine Sequence/Array ist."));
+
             exportedRoutines = routines.AsReadOnly();
         }
 
@@ -167,6 +170,18 @@ namespace ScriptStack
             {
                 var node = CoerceToYamlNode(parameters[0]);
                 return node is null ? "null\n" : ToYamlString(node);
+            }
+
+            if (routine == "yaml_is_map")
+            {
+                var node = CoerceToYamlNode(parameters[0]);
+                return node is YamlMappingNode;
+            }
+
+            if (routine == "yaml_is_seq")
+            {
+                var node = CoerceToYamlNode(parameters[0]);
+                return node is YamlSequenceNode;
             }
 
             return null;
