@@ -12,7 +12,7 @@ function JSONTest() {
 	
 	var obj = {"a": "Hello", "b": "World"};
 
-	// ScriptStack Array als JSON-String anzeigen
+	// ScriptStack Object als JSON-String anzeigen
 	print(json_string(obj)); // {"a":"Hello", "b":"World"}
 	
 	// JSON Node aus ScriptStack Object erstellen
