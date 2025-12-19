@@ -41,6 +41,9 @@ namespace ScriptStack
             routines.Add(new Routine((Type)null, "json_node", (Type)null, "Konvertiert Wert/ArrayList zu JsonNode (JsonObject/JsonArray/JsonValue)."));
             routines.Add(new Routine(typeof(string), "json_string", (Type)null, "Konvertiert Wert/ArrayList zu JSON-String."));
 
+            routines.Add(new Routine(typeof(bool), "json_is_obj", (Type)null, "True wenn Node ein JsonObject ist."));
+            routines.Add(new Routine(typeof(bool), "json_is_arr", (Type)null, "True wenn Node ein JsonArray ist."));
+
             exportedRoutines = routines.AsReadOnly();
 
         }
@@ -255,6 +258,18 @@ namespace ScriptStack
             {
                 var node = CoerceToJsonNode(parameters[0]);
                 return node is null ? "null" : node.ToJsonString();
+            }
+
+            if (routine == "json_is_obj")
+            {
+                var node = CoerceToJsonNode(parameters[0]);
+                return node is JsonObject;
+            }
+
+            if (routine == "json_is_arr")
+            {
+                var node = CoerceToJsonNode(parameters[0]);
+                return node is JsonArray;
             }
 
             return null;
