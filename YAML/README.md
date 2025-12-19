@@ -43,7 +43,6 @@ function main() {
 		print("" + yaml_index(it) + " => " + yaml_value(it));
 	}
 
-
 	it = yaml_iter(yaml_get(doc, "tutorial"));
 	while (yaml_next(it)) {
 		
@@ -54,6 +53,15 @@ function main() {
 			print("" + yaml_key(tit) + " => " + yaml_value(tit));
 		}
 		
+	}
+
+	it = yaml_iter(doc);
+	while (yaml_next(it)) {
+		var idx = yaml_index(it);
+		if (idx >= 0)
+			print("" + idx + " => " + yaml_value(it));
+		else
+			print("" + yaml_key(it) + " => " + yaml_value(it));
 	}
 	
 }
