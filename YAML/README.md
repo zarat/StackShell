@@ -113,5 +113,14 @@ function main() {
     // -------- final dump --------
     print("== FINAL YAML ==\n" + yaml_string(doc));
 
+    it = yaml_iter(doc);
+	while (yaml_next(it)) {
+	  var idx = yaml_index(it);
+	  if (idx >= 0)
+		print("[" + idx + "] => " + yaml_value(it));
+	  else
+		print(yaml_key(it) + " => " + yaml_value(it));
+	}
+
 }
 ```
