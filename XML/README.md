@@ -1,6 +1,6 @@
 # ScriptStack.XML
 
-Einfaches Plugin zum Arbeiten mit XML Daten.
+Einfaches Plugin zum Arbeiten mit XML Daten. Unterstützt XPath
 
 ```XML
 <?xml version="1.0" encoding="utf-8"?>
