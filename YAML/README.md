@@ -1,4 +1,7 @@
-Example YAML file
+# ScriptStack.YAML
+
+Einfaches Plugin zum Arbeiten mit YAML Daten
+
 ```YAML
 ---
 # A sample yaml file
