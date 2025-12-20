@@ -47,7 +47,7 @@ function main() {
     print("domain[0] exists? " + yaml_has(doc, "domain[0]"));
     print("domain[0] = " + yaml_get(doc, "domain[0]"));
 
-    // nested example (aus deinem sample)
+    // nested example 
     print("tutorial[0].yaml.name = " + yaml_get(doc, "tutorial[0].yaml.name"));
     print("");
 
@@ -60,7 +60,7 @@ function main() {
     // -------- keys --------
     print("== yaml_keys (root mapping) ==");
     var k = yaml_keys(doc);
-    print(k); // ArrayList-Stringdarstellung von deiner Runtime
+    print(k); // ArrayList-Stringdarstellung
     print("");
 
     // -------- type checks --------
@@ -99,7 +99,7 @@ function main() {
     print("");
 
     // -------- set: ArrayList -> YAML Sequence --------
-    // [1,2,3] als ScriptStack ArrayList (bei dir ist [] literal schon ArrayList)
+    // [1,2,3] als ScriptStack ArrayList 
     yaml_set(doc, "numbers", [1, 2, 3]);
     print("numbers count = " + yaml_count(yaml_get(doc, "numbers")));
     it = yaml_iter(yaml_get(doc, "numbers"));
