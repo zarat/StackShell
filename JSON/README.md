@@ -103,6 +103,15 @@ function main() {
     print(json_string(node));
     print("");
 
+    it = json_iter(node);
+    while (json_next(it)) {
+        var idx = json_index(it);
+        if (idx >= 0)
+            print("[" + idx + "] => " + json_value(it));
+        else
+            print(json_key(it) + " => " + json_value(it));
+    }
+
     // -------- final dump --------
     print("== FINAL JSON ==");
     print(json_string(doc));
