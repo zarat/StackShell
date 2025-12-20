@@ -1,13 +1,28 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO;
-
 using ScriptStack;
 using ScriptStack.Compiler;
 using ScriptStack.Runtime;
 
 namespace StackShell
 {
+
+    class MyScanner : Scanner 
+    { 
+    
+        public List<string> Scan(string source)
+        {
+
+            var lines = new List<string>();
+
+            foreach (var line in File.ReadLines(source))
+            {
+                lines.Add(line);
+            }
+
+            return lines;
+
+        }
+
+    }
 
     static class StackShell
     {
@@ -39,7 +54,21 @@ namespace StackShell
                 manager.Optimize = true;
                 manager.Debug = false;
 
-                manager.LoadComponents(System.AppDomain.CurrentDomain.BaseDirectory);
+                manager.Scanner = new MyScanner();
+
+                manager.LexerFactory = lines =>
+                {
+                    var lx = new Lexer(lines);
+                    lx.DefaultReal = Lexer.DefaultRealType.Float;
+                    return lx;
+                };
+
+                manager.LoadComponents(Path.Combine(System.AppDomain.CurrentDomain.BaseDirectory, "plugins"));
+
+                if (manager.IsRegistered("print"))
+                    manager.UnRegister("print");
+
+                manager.Register(new Routine((Type)null, "print", (Type)null));
 
                 script = new Script(manager, args[0]);
 
@@ -54,7 +83,7 @@ namespace StackShell
             catch (ScriptStackException e)
             {
 
-                Console.WriteLine("Error: " + e.MessageTrace);
+                throw; //Console.WriteLine("Error: " + e.MessageTrace);
 
             }
 
@@ -63,6 +92,10 @@ namespace StackShell
         public object Invoke(string routine, List<object> parameters)
         {
 
+            if(routine == "print")
+            {
+                Console.WriteLine(parameters[0]);
+            }
             return null;
 
         }
