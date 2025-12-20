@@ -1,3 +1,26 @@
+```
+<?xml version="1.0" encoding="utf-8"?>
+<CATALOG>
+  <CDS>
+    <CD id="1" country="USA">
+      <TITLE>Empire Burlesque</TITLE>
+      <ARTIST>Bob Dylan</ARTIST>
+      <COMPANY>Columbia</COMPANY>
+      <PRICE currency="EUR">10.90</PRICE>
+      <YEAR>1985</YEAR>
+    </CD>
+
+    <CD id="2" country="UK">
+      <TITLE>Hide your heart</TITLE>
+      <ARTIST>Bonnie Tyler</ARTIST>
+      <COMPANY>CBS Records</COMPANY>
+      <PRICE currency="EUR">9.90</PRICE>
+      <YEAR>1988</YEAR>
+    </CD>
+  </CDS>
+</CATALOG>
+```
+
 ```Javascript
 function main() {
 
