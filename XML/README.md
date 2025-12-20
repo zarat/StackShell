@@ -1,6 +1,6 @@
 # ScriptStack.XML
 
-Einfaches Plugin zum Arbeiten mit XML Daten, Namespaces werden bei XPath berücksichtigt!
+Einfaches Plugin zum Arbeiten mit XML Daten.
 
 ```XML
 <?xml version="1.0" encoding="utf-8"?>
@@ -87,6 +87,98 @@ function main() {
 
     print("\n== Final XML (pretty)==");
     print(xml_string(doc));
+
+}
+```
+
+# Mit Namespaces
+
+```XML
+<?xml version="1.0" encoding="utf-8"?>
+<foo:CATALOG xmlns:foo="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <foo:CDS id="1">
+    <foo:CD id="1" country="USA">
+      <foo:TITLE>Empire Burlesque</foo:TITLE>
+      <foo:ARTIST>Bob Dylan</foo:ARTIST>
+      <foo:COMPANY>Columbia</foo:COMPANY>
+      <foo:PRICE currency="EUR">10.90</foo:PRICE>
+      <foo:YEAR>1985</foo:YEAR>
+    </foo:CD>
+
+    <foo:CD id="2" country="UK">
+      <foo:TITLE>Hide your heart</foo:TITLE>
+      <foo:ARTIST>Bonnie Tyler</foo:ARTIST>
+      <foo:COMPANY>CBS Records</foo:COMPANY>
+      <foo:PRICE currency="EUR">9.90</foo:PRICE>
+      <foo:YEAR>1988</foo:YEAR>
+    </foo:CD>
+  </foo:CDS>
+</foo:CATALOG>
+```
+
+```Javascript
+function footest() {
+	
+	var doc;
+	
+	var f = fopen("footest.xml", "r");
+	var data = fread(f);
+    fclose(f);
+
+    doc = xml_parse(data);
+	
+	print(doc);
+	
+    print("== xml_has ==");
+    print("has /foo:CATALOG/foo:CDS/foo:CD => " + xml_has(doc, "/foo:CATALOG/foo:CDS/foo:CD") + "\n\n");
+
+    print("== xml_select (Element) ==");
+    var companyNode = xml_select(doc, "/foo:CATALOG/foo:CDS/foo:CD[1]/foo:COMPANY");
+    print("is elem: " + xml_is_elem(companyNode) + "\n");
+    print("value: " + xml_value(companyNode) + "\n\n");
+
+    print("== xml_select (Attribute) ==");
+    var idAttr = xml_select(doc, "/foo:CATALOG/foo:CDS/foo:CD[1]/@id");
+    print("is attr: " + xml_is_attr(idAttr) + "\n");
+    print("attr value: " + xml_value(idAttr) + "\n\n");
+
+    print("== xml_attr (Attribute by name) ==");
+    var cd1 = xml_select(doc, "/foo:CATALOG/foo:CDS/foo:CD[1]");
+    print("cd1 id via xml_attr: " + xml_attr(cd1, "id") + "\n\n");
+
+    print("== xml_set (Element value) ==");
+    xml_set(doc, "/CATALOG/CDS/CD[1]/COMPANY", "NEW_LABEL");
+    print("company after set: " + xml_value(xml_select(doc, "/foo:CATALOG/foo:CDS/foo:CD[1]/foo:COMPANY")) + "\n\n");
+
+    print("== xml_set (Attribute value) ==");
+    xml_set(doc, "/CATALOG/CDS/CD[1]/@id", "999");
+    print("id after set: " + xml_value(xml_select(doc, "/foo:CATALOG/foo:CDS/foo:CD[1]/@id")) + "\n\n");
+
+    print("== xml_select_all (alle CD Nodes) ==");
+    var cds = xml_select_all(doc, "/foo:CATALOG/foo:CDS/foo:CD");
+    print("select_all returnefoo: " + cds + "\n\n"); // je nach ScriptStack wird das evtl. als ArrayList angezeigt
+
+    print("== xml_iter (children von /CATALOG/CDS/CD[1]) ==");
+    var it = xml_iter(cd1);
+    while (xml_next(it)) {
+        print("" + xml_index(it) + " name=" + xml_name(it) + " val=" + xml_value_it(it) + "\n");
+    }
+    print("\n");
+
+    print("== xml_iter_attr (Attribute von CD[1]) ==");
+    it = xml_iter_attr(cd1);
+    while (xml_next(it)) {
+        print(xml_name(it) + " = " + xml_value_it(it) + "\n");
+    }
+    print("\n");
+
+    print("== xml_iter_all (Descendants unter /CATALOG) ==");
+    var catalog = xml_select(doc, "/foo:CATALOG");
+    it = xml_iter_all(catalog);
+    while (xml_next(it)) {
+        // hier sind es nur Elemente (Descendants())
+        print(""+ xml_index(it) + " <" + xml_name(it) + ">\n");
+    }
 
 }
 ```
