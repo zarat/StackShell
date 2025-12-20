@@ -1,86 +1,106 @@
+```JSON
+{
+  "company": "spacelift",
+  "domain": ["devops", "devsecops"],
+  "tutorial": [
+    { "yaml": { "name": "YAML Ain't Markup Language", "type": "awesome", "born": 2001 } },
+    { "json": { "name": "JavaScript Object Notation", "type": "great", "born": 2001 } }
+  ],
+  "author": "omkarbirade",
+  "published": true
+}
+```
+
 ```Javascript
-function JSONTest() {
+function main() {
 
-	var arr = ["Hello", "World"];
-	
-	// ScriptStack Array als JSON-String anzeigen
-	print(json_string(arr)); // ["Hello", "World"]
+    // -------- Datei lesen --------
+    var f = fopen("test.json", "r");
+    var data = fread(f);
+    fclose(f);
 
-	// JSON Node aus ScriptStack Array erstellen
-	var node = json_node(arr);
-	print(json_get(node, "[0]")); // Hello
-	
-	var obj = {"a": "Hello", "b": "World"};
+    print("== RAW JSON ==\n" + data + "\n");
 
-	// ScriptStack Object als JSON-String anzeigen
-	print(json_string(obj)); // {"a":"Hello", "b":"World"}
-	
-	// JSON Node aus ScriptStack Object erstellen
-	print(json_get(json_node(obj), "b")); // World
-	
-	// for Schleife über ein Array
-	var root = json_parse("[\"Hello\", \"World\"]");
-	var n = json_count(root);
-	for (var i = 0; i < n; i = i + 1) {
-		print(json_get(root, "[" + i + "]"));
-	}
+    // -------- parse --------
+    var doc = json_parse(data);
 
-	// for Schleife über ein Object
-	root = json_parse("{ \"a\": \"Hello\", \"b\": \"World\" }");
-	n = json_count(root);
-	var keys = json_keys(root);
-	for (i = 0; i < n; i = i + 1) {	
-		print(json_get(root, keys[i]));
-	}
-	
-	// foreach Schleife über ein Object
-	root = json_parse("{\"a\": \"Hello\", \"b\": \"World\"}");
-	keys = json_keys(root);
-	var key;
-	foreach (key in keys) {
-		print("" + key + " => " + json_get(root, key));
-	}
+    // -------- get / has --------
+    print("== json_get / json_has ==");
+    print("company exists? " + json_has(doc, "company"));
+    print("company = " + json_get(doc, "company"));
 
-	// Iterator über Array
-	root = json_parse("[\"Hello\", \"World\"]");
-	var it = json_iter(root);
-	while (json_next(it)) {
-		print(json_value(it));
-	}
-	
-	// Iterator über Object
-	root = json_parse("{\"a\": \"Hello\", \"b\": \"World\"}");
-	it = json_iter(root);
-	while (json_next(it)) {
-		print(json_value(it));
-	}
-	
-	// Iterator über inneres Object
-	root = json_parse("{\"items\": { \"a\":1, \"b\":2, \"c\":3 } }");
-	it = json_iter(json_get(root, "items"));
-	while(json_next(it)) {
-		var ok = json_key(it);
-		var ov = json_value(it);
-		print("items[" + ok + "] => " + ov);
-	}
-	
-	// Iterator über inneres Array
-	root = json_parse("{\"items\": [1, 2, 3] }");
-	it = json_iter(json_get(root, "items"));
-	while(json_next(it)) {
-		var ai = json_index(it);
-		var av = json_value(it);
-		print("items[" + ai + "] => " + av);
-	}
+    print("domain[0] exists? " + json_has(doc, "domain[0]"));
+    print("domain[0] = " + json_get(doc, "domain[0]"));
 
-	root = json_parse("{\"items\": { \"a\":1, \"b\":2, \"c\":3 } }");
-	it = json_iter(root);
-	while (json_next(it)) {
-		if (json_is_arr(root))
-			print("" + json_index(it) + " => " + json_value(it));
-		else
-			print("" + json_key(it) + " => " + json_value(it));
-	}
-	
+    print("tutorial[0].yaml.name = " + json_get(doc, "tutorial[0].yaml.name"));
+    print("");
+
+    // -------- count --------
+    print("== json_count ==");
+    print("root count (object keys) = " + json_count(doc));
+    print("domain count (array) = " + json_count(json_get(doc, "domain")));
+    print("");
+
+    // -------- keys --------
+    print("== json_keys (root object) ==");
+    var k = json_keys(doc);
+    print(k);   // ArrayList Darstellung deiner Runtime
+    print("");
+
+    // -------- type checks --------
+    print("== json_is_obj / json_is_arr ==");
+    print("doc is obj? " + json_is_obj(doc));
+    print("doc is arr? " + json_is_arr(doc));
+    print("domain is arr? " + json_is_arr(json_get(doc, "domain")));
+    print("");
+
+    // -------- iter root object --------
+    print("== json_iter over ROOT (Object) ==");
+    var it = json_iter(doc);
+    while (json_next(it)) {
+        // object: index = -1, key != null
+        print("key=" + json_key(it) + " idx=" + json_index(it) + " val=" + json_value(it));
+    }
+    print("");
+
+    // -------- iter sequence (domain) --------
+    print("== json_iter over domain (Array) ==");
+    it = json_iter(json_get(doc, "domain"));
+    while (json_next(it)) {
+        // array: key = null, index >= 0
+        print("idx=" + json_index(it) + " val=" + json_value(it));
+    }
+    print("");
+
+    // -------- set: einfache Werte --------
+    print("== json_set ==");
+    json_set(doc, "company", "NEWCO");
+    json_set(doc, "published", false);
+    json_set(doc, "domain[1]", "security");
+
+    print("company now = " + json_get(doc, "company"));
+    print("published now = " + json_get(doc, "published"));
+    print("domain[1] now = " + json_get(doc, "domain[1]"));
+    print("");
+
+    // -------- set: ArrayList -> JsonArray --------
+    json_set(doc, "numbers", [1, 2, 3]);
+    print("numbers count = " + json_count(json_get(doc, "numbers")));
+
+    it = json_iter(json_get(doc, "numbers"));
+    while (json_next(it)) {
+        print("numbers[" + json_index(it) + "]=" + json_value(it));
+    }
+    print("");
+
+    // -------- json_node / json_string --------
+    print("== json_node / json_string ==");
+    var node = json_node([ "a", "b", "c" ]);   // JsonArray
+    print(json_string(node));
+    print("");
+
+    // -------- final dump --------
+    print("== FINAL JSON ==");
+    print(json_string(doc));
 }
 ```
