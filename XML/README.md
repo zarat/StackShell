@@ -147,32 +147,32 @@ function footest() {
     print("cd1 id via xml_attr: " + xml_attr(cd1, "id") + "\n\n");
 
     print("== xml_set (Element value) ==");
-    xml_set(doc, "/CATALOG/CDS/CD[1]/COMPANY", "NEW_LABEL");
+    xml_set(doc, "/foo:CATALOG/foo:CDS/foo:CD[1]/foo:COMPANY", "NEW_LABEL");
     print("company after set: " + xml_value(xml_select(doc, "/foo:CATALOG/foo:CDS/foo:CD[1]/foo:COMPANY")) + "\n\n");
 
     print("== xml_set (Attribute value) ==");
-    xml_set(doc, "/CATALOG/CDS/CD[1]/@id", "999");
+    xml_set(doc, "/foo:CATALOG/foo:CDS/foo:CD[1]/@id", "999");
     print("id after set: " + xml_value(xml_select(doc, "/foo:CATALOG/foo:CDS/foo:CD[1]/@id")) + "\n\n");
 
-    print("== xml_select_all (alle CD Nodes) ==");
+    print("== xml_select_all (alle foo:CD Nodes) ==");
     var cds = xml_select_all(doc, "/foo:CATALOG/foo:CDS/foo:CD");
-    print("select_all returnefoo: " + cds + "\n\n"); // je nach ScriptStack wird das evtl. als ArrayList angezeigt
+    print("select_all returned: " + cds + "\n\n"); 
 
-    print("== xml_iter (children von /CATALOG/CDS/CD[1]) ==");
+    print("== xml_iter (children von /foo:CATALOG/foo:CDS/foo:CD[1]) ==");
     var it = xml_iter(cd1);
     while (xml_next(it)) {
         print("" + xml_index(it) + " name=" + xml_name(it) + " val=" + xml_value_it(it) + "\n");
     }
     print("\n");
 
-    print("== xml_iter_attr (Attribute von CD[1]) ==");
+    print("== xml_iter_attr (Attribute von foo:CD[1]) ==");
     it = xml_iter_attr(cd1);
     while (xml_next(it)) {
         print(xml_name(it) + " = " + xml_value_it(it) + "\n");
     }
     print("\n");
 
-    print("== xml_iter_all (Descendants unter /CATALOG) ==");
+    print("== xml_iter_all (Descendants unter /foo:CATALOG) ==");
     var catalog = xml_select(doc, "/foo:CATALOG");
     it = xml_iter_all(catalog);
     while (xml_next(it)) {
