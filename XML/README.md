@@ -1,6 +1,6 @@
 # ScriptStack.XML
 
-Einfaches Plugin zum Arbeiten mit XML Daten, Namespaces werden berücksichtigt!
+Einfaches Plugin zum Arbeiten mit XML Daten, Namespaces werden bei XPath berücksichtigt!
 
 ```XML
 <?xml version="1.0" encoding="utf-8"?>
