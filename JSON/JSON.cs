@@ -119,7 +119,7 @@ namespace ScriptStack
 
                 JsonNode? valueNode = null;
 
-                // Wenn value ein JSON-String ist (z.B. "{...}" oder "[...]"), als JsonNode setzen,
+                // Strings: alte Heuristik behalten (Zahlen/Bool/null)
                 if (value is string s)
                 {
                     var t = s.Trim();
@@ -141,18 +141,17 @@ namespace ScriptStack
                 }
                 else if (value is char c)
                 {
-                    valueNode = (int)c;
+                    valueNode = JsonValue.Create(c.ToString());
                 }
-                // sonst als "normalen" Wert (string/number/bool/null).
                 else
                 {
-                    valueNode = JsonValue.Create(value);
+                    // ✅ HIER ist der Fix:
+                    // ArrayList / JsonNode / primitives sauber konvertieren
+                    valueNode = CoerceToJsonNode(value);
                 }
 
                 JsonPathNode.SetByPath(root, path, valueNode);
 
-                // zurückgeben: entweder das Root-Objekt selbst ODER JSON-String
-                // (hier: JSON-String)
                 return root.ToJsonString();
             }
 
