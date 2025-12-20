@@ -1,26 +1,25 @@
 using ScriptStack.Compiler;
 using ScriptStack.Runtime;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.Globalization;
 using System.Linq;
+using System.Xml;
 using System.Xml.Linq;
 using System.Xml.XPath;
 
 namespace ScriptStack
 {
-
     public class XML : Model
     {
-
         private static ReadOnlyCollection<Routine> exportedRoutines;
 
         public XML()
         {
             if (exportedRoutines != null) return;
 
-            List<Routine> routines = new List<Routine>();
+            var routines = new List<Routine>();
 
             routines.Add(new Routine((Type)null, "xml_parse", (Type)null, "Erstelle ein XML Dokument (XDocument) aus einem String."));
             routines.Add(new Routine(typeof(string), "xml_string", (Type)null, "Gibt das XML (XDocument/XNode/XAttribute) als String zurück."));
@@ -38,7 +37,7 @@ namespace ScriptStack
             routines.Add(new Routine(typeof(bool), "xml_is_elem", (Type)null, "True wenn Node ein XElement ist."));
             routines.Add(new Routine(typeof(bool), "xml_is_attr", (Type)null, "True wenn Node ein XAttribute ist."));
 
-            // iterators (alle 1 Parameter wie json_iter/yaml_iter)
+            // iterators
             routines.Add(new Routine((Type)null, "xml_iter", (Type)null, "Iterator über Child-Nodes (XDocument/XElement/XNode oder XML-String)."));
             routines.Add(new Routine((Type)null, "xml_iter_all", (Type)null, "Iterator über Descendants (Unter-Elemente) eines Elements."));
             routines.Add(new Routine((Type)null, "xml_iter_attr", (Type)null, "Iterator über Attribute eines Elements."));
@@ -52,18 +51,14 @@ namespace ScriptStack
             exportedRoutines = routines.AsReadOnly();
         }
 
-        public ReadOnlyCollection<Routine> Routines
-        {
-            get { return exportedRoutines; }
-        }
+        public ReadOnlyCollection<Routine> Routines => exportedRoutines;
 
         public object Invoke(string routine, List<object> parameters)
         {
             if (routine == "xml_parse")
             {
                 string xml = (string)parameters[0];
-                var doc = XDocument.Parse(xml, LoadOptions.SetLineInfo);
-                return doc;
+                return XDocument.Parse(xml, LoadOptions.SetLineInfo);
             }
 
             if (routine == "xml_string")
@@ -71,7 +66,7 @@ namespace ScriptStack
                 var node = parameters[0];
                 if (node is XDocument d) return d.ToString(SaveOptions.None);
                 if (node is XNode xn) return xn.ToString(SaveOptions.None);
-                return XmlToString(parameters[0]);
+                return XmlToString(node);
             }
 
             if (routine == "xml_select")
@@ -79,19 +74,17 @@ namespace ScriptStack
                 object root = parameters[0];
                 string xpath = (string)parameters[1];
 
-                XNode xroot = ToXNode(root);
-                if (xroot == null) return null;
+                // !!! WICHTIG !!!
+                // Für XPath arbeiten wir IMMER auf dem Root-Element (bei XDocument => d.Root),
+                // weil es Umgebungen gibt, wo absolute XPaths auf dem XDocument-Kontext “komisch” laufen.
+                XElement ctxElem = ToXPathContextElement(root);
+                if (ctxElem == null) return null;
 
-                object eval = xroot.XPathEvaluate(xpath);
+                var nsmgr = BuildNamespaceResolver(ctxElem);
+                object eval = ctxElem.XPathEvaluate(xpath, nsmgr);
 
-                if (eval is IEnumerable<object>)
-                {
-                    IEnumerable<object> en = (IEnumerable<object>)eval;
-                    object first = en.Cast<object>().FirstOrDefault();
-                    return UnwrapXPathObject(first);
-                }
-
-                return UnwrapXPathObject(eval);
+                object first = FirstXPathResult(eval);
+                return UnwrapXPathObject(first);
             }
 
             if (routine == "xml_select_all")
@@ -99,16 +92,17 @@ namespace ScriptStack
                 object root = parameters[0];
                 string xpath = (string)parameters[1];
 
-                XNode xroot = ToXNode(root);
                 var result = new ScriptStack.Runtime.ArrayList();
-                if (xroot == null) return result;
 
-                object eval = xroot.XPathEvaluate(xpath);
+                XElement ctxElem = ToXPathContextElement(root);
+                if (ctxElem == null) return result;
 
-                if (eval is IEnumerable<object>)
+                var nsmgr = BuildNamespaceResolver(ctxElem);
+                object eval = ctxElem.XPathEvaluate(xpath, nsmgr);
+
+                if (IsEnumerableXPathResult(eval))
                 {
-                    IEnumerable<object> en = (IEnumerable<object>)eval;
-                    foreach (var item in en)
+                    foreach (var item in (IEnumerable)eval)
                         result.Add(UnwrapXPathObject(item));
                 }
                 else
@@ -129,11 +123,8 @@ namespace ScriptStack
                 object node = parameters[0];
                 string attrName = (string)parameters[1];
 
-                XElement e = node as XElement;
-                if (e != null) return e.Attribute(attrName)?.Value;
-
-                XDocument d = node as XDocument;
-                if (d != null) return d.Root?.Attribute(attrName)?.Value;
+                if (node is XElement e) return e.Attribute(attrName)?.Value;
+                if (node is XDocument d) return d.Root?.Attribute(attrName)?.Value;
 
                 return null;
             }
@@ -143,15 +134,16 @@ namespace ScriptStack
                 object root = parameters[0];
                 string xpath = (string)parameters[1];
 
-                XNode xroot = ToXNode(root);
-                if (xroot == null) return false;
+                XElement ctxElem = ToXPathContextElement(root);
+                if (ctxElem == null) return false;
 
-                object eval = xroot.XPathEvaluate(xpath);
+                var nsmgr = BuildNamespaceResolver(ctxElem);
+                object eval = ctxElem.XPathEvaluate(xpath, nsmgr);
 
-                if (eval is IEnumerable<object>)
+                if (IsEnumerableXPathResult(eval))
                 {
-                    IEnumerable<object> en = (IEnumerable<object>)eval;
-                    return en.Cast<object>().Any();
+                    foreach (var _ in (IEnumerable)eval) return true;
+                    return false;
                 }
 
                 return eval != null;
@@ -167,41 +159,29 @@ namespace ScriptStack
                 if (root is XAttribute)
                     throw new InvalidOperationException("xml_set: root darf kein Attribut sein.");
 
-                XNode xroot = root as XNode;
-                if (xroot == null)
-                    throw new InvalidOperationException("xml_set: erwartet XDocument oder XElement.");
+                // Kontext fürs XPath: Root-Element
+                XElement ctxElem = ToXPathContextElement(root);
+                if (ctxElem == null)
+                    throw new InvalidOperationException("xml_set: erwartet XDocument oder XElement (mit Root).");
 
-                object eval = xroot.XPathEvaluate(xpath);
+                var nsmgr = BuildNamespaceResolver(ctxElem);
+                object eval = ctxElem.XPathEvaluate(xpath, nsmgr);
 
-                object target = null;
-                if (eval is IEnumerable<object>)
-                {
-                    IEnumerable<object> en = (IEnumerable<object>)eval;
-                    target = en.Cast<object>().FirstOrDefault();
-                }
-                else
-                {
-                    target = eval;
-                }
+                object target = UnwrapXPathObject(FirstXPathResult(eval));
 
-                target = UnwrapXPathObject(target);
-
-                XElement te = target as XElement;
-                if (te != null)
+                if (target is XElement te)
                 {
                     te.Value = value;
                     return XmlToString(root);
                 }
 
-                XAttribute ta = target as XAttribute;
-                if (ta != null)
+                if (target is XAttribute ta)
                 {
                     ta.Value = value;
                     return XmlToString(root);
                 }
 
-                XText tt = target as XText;
-                if (tt != null)
+                if (target is XText tt)
                 {
                     tt.Value = value;
                     return XmlToString(root);
@@ -213,8 +193,7 @@ namespace ScriptStack
             if (routine == "xml_is_elem")
             {
                 object n = parameters[0];
-                XDocument d = n as XDocument;
-                if (d != null) n = d.Root;
+                if (n is XDocument d) n = d.Root;
                 return n is XElement;
             }
 
@@ -223,7 +202,7 @@ namespace ScriptStack
                 return parameters[0] is XAttribute;
             }
 
-            // iterators (alle 1 Parameter)
+            // iterators
             if (routine == "xml_iter")
             {
                 object root = CoerceToXmlObject(parameters[0]);
@@ -277,18 +256,21 @@ namespace ScriptStack
 
         // ---------- helpers ----------
 
-        private static XNode ToXNode(object o)
+        /// <summary>
+        /// XPath-Kontext immer als XElement (Root-Element).
+        /// </summary>
+        private static XElement ToXPathContextElement(object o)
         {
             if (o == null) return null;
 
-            XDocument d = o as XDocument;
-            if (d != null) return d;
+            if (o is XDocument d) return d.Root;
+            if (o is XElement e) return e;
 
-            XElement e = o as XElement;
-            if (e != null) return e;
+            // Falls jemand ein XNode (Element) direkt übergibt:
+            if (o is XNode xn && xn is XElement xe) return xe;
 
-            XNode n = o as XNode;
-            if (n != null) return n;
+            // Optional: wenn jemand XDocument als XNode gecastet hat
+            if (o is XNode n && n is XDocument xd) return xd.Root;
 
             return null;
         }
@@ -300,8 +282,7 @@ namespace ScriptStack
             if (o is XDocument || o is XElement || o is XAttribute || o is XText || o is XNode)
                 return o;
 
-            string s = o as string;
-            if (s != null)
+            if (o is string s)
                 return XDocument.Parse(s, LoadOptions.SetLineInfo);
 
             throw new InvalidOperationException("xml_iter erwartet XDocument/XElement/XAttribute/XText/XNode oder XML-String.");
@@ -311,14 +292,9 @@ namespace ScriptStack
         {
             if (node == null) return null;
 
-            XDocument d = node as XDocument;
-            if (d != null) return d.ToString(SaveOptions.DisableFormatting);
-
-            XNode xn = node as XNode;
-            if (xn != null) return xn.ToString(SaveOptions.DisableFormatting);
-
-            XAttribute xa = node as XAttribute;
-            if (xa != null) return xa.ToString();
+            if (node is XDocument d) return d.ToString(SaveOptions.DisableFormatting);
+            if (node is XNode xn) return xn.ToString(SaveOptions.DisableFormatting);
+            if (node is XAttribute xa) return xa.ToString();
 
             return node.ToString();
         }
@@ -327,20 +303,11 @@ namespace ScriptStack
         {
             if (node == null) return null;
 
-            XDocument d = node as XDocument;
-            if (d != null) return d.Root != null ? d.Root.Value : null;
-
-            XElement e = node as XElement;
-            if (e != null) return e.Value;
-
-            XAttribute a = node as XAttribute;
-            if (a != null) return a.Value;
-
-            XText t = node as XText;
-            if (t != null) return t.Value;
-
-            XNode xn = node as XNode;
-            if (xn != null) return xn.ToString(SaveOptions.DisableFormatting);
+            if (node is XDocument d) return d.Root != null ? d.Root.Value : null;
+            if (node is XElement e) return e.Value;
+            if (node is XAttribute a) return a.Value;
+            if (node is XText t) return t.Value;
+            if (node is XNode xn) return xn.ToString(SaveOptions.DisableFormatting);
 
             return node.ToString();
         }
@@ -349,11 +316,61 @@ namespace ScriptStack
         {
             if (o == null) return null;
 
-            // LINQ to XML XPath liefert oft XElement/XAttribute/XText direkt.
             if (o is XElement || o is XAttribute || o is XText || o is XDocument) return o;
+            return o; // scalar (bool/number/string)
+        }
 
-            // Scalar results from XPathEvaluate (bool/number/string) return as-is
-            return o;
+        private static bool IsEnumerableXPathResult(object eval)
+        {
+            // string ist IEnumerable<char> -> NICHT als nodeset behandeln
+            if (eval == null) return false;
+            if (eval is string) return false;
+            return eval is IEnumerable;
+        }
+
+        private static object FirstXPathResult(object eval)
+        {
+            if (!IsEnumerableXPathResult(eval))
+                return eval;
+
+            foreach (var item in (IEnumerable)eval)
+                return item;
+
+            return null;
+        }
+
+        /// <summary>
+        /// IXmlNamespaceResolver für XPath:
+        /// - Default-Namespace (xmlns="...") wird als Prefix "d" registriert.
+        /// - Alle xmlns:foo="..." Deklarationen vom Root werden ebenfalls registriert.
+        /// </summary>
+        private static IXmlNamespaceResolver BuildNamespaceResolver(XElement root)
+        {
+            var nt = new NameTable();
+            var nsmgr = new XmlNamespaceManager(nt);
+
+            if (root == null)
+                return nsmgr;
+
+            // Default-NS der Elemente
+            string defNs = root.Name.NamespaceName;
+            if (!string.IsNullOrEmpty(defNs))
+                nsmgr.AddNamespace("d", defNs);
+
+            // weitere deklarierte Prefixe (xmlns:foo="...")
+            foreach (var a in root.Attributes().Where(a => a.IsNamespaceDeclaration))
+            {
+                // default decl (xmlns="...") ignorieren, weil wir es schon auf "d" mappen
+                if (a.Name.LocalName == "xmlns") continue;
+
+                string prefix = a.Name.LocalName;
+                string uri = a.Value;
+
+                if (!string.IsNullOrEmpty(prefix) && !string.IsNullOrEmpty(uri))
+                    nsmgr.AddNamespace(prefix, uri);
+            }
+
+            return nsmgr;
         }
 
         // ---------- iterator ----------
@@ -392,12 +409,10 @@ namespace ScriptStack
                 object r = _root;
 
                 // XDocument -> Root (wenn vorhanden)
-                XDocument d = r as XDocument;
-                if (d != null)
+                if (r is XDocument d)
                     r = d.Root != null ? (object)d.Root : (object)d;
 
-                XElement e = r as XElement;
-                if (e != null)
+                if (r is XElement e)
                 {
                     if (_mode == XmlIterMode.Attributes)
                     {
@@ -407,17 +422,14 @@ namespace ScriptStack
 
                     if (_mode == XmlIterMode.Descendants)
                     {
-                        // nur Elemente (wie "descendants" gemeint)
                         _enum = e.Descendants().Cast<object>().GetEnumerator();
                         return;
                     }
 
-                    // children: Nodes() (Elemente + Text + Kommentare etc.)
                     _enum = e.Nodes().Cast<object>().GetEnumerator();
                     return;
                 }
 
-                // Attribut/Text/Node: iterator über "nur dieses Element"
                 if (r is XAttribute || r is XText || r is XNode)
                 {
                     _enum = Single(r).GetEnumerator();
@@ -448,10 +460,7 @@ namespace ScriptStack
                 return true;
             }
 
-            public int CurrentIndex
-            {
-                get { return _hasCurrent ? _index : -1; }
-            }
+            public int CurrentIndex => _hasCurrent ? _index : -1;
 
             public string CurrentName
             {
@@ -459,22 +468,14 @@ namespace ScriptStack
                 {
                     if (!_hasCurrent) return null;
 
-                    XElement e = _current as XElement;
-                    if (e != null) return e.Name.LocalName;
-
-                    XAttribute a = _current as XAttribute;
-                    if (a != null) return a.Name.LocalName;
+                    if (_current is XElement e) return e.Name.LocalName;
+                    if (_current is XAttribute a) return a.Name.LocalName;
 
                     return null;
                 }
             }
 
-            public object CurrentNode
-            {
-                get { return _hasCurrent ? _current : null; }
-            }
+            public object CurrentNode => _hasCurrent ? _current : null;
         }
-    
     }
-
 }
