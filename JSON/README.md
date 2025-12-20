@@ -1,3 +1,7 @@
+# ScriptStack.JSON
+
+Einfaches Plugin zum Arbeiten mit JSON Daten
+
 ```JSON
 {
   "company": "spacelift",
