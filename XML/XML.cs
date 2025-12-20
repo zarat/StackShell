@@ -5,7 +5,6 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Linq;
-using System.Xml;
 using System.Xml.Linq;
 using System.Xml.XPath;
 
@@ -19,44 +18,50 @@ namespace ScriptStack
 
         public XML()
         {
-
             if (exportedRoutines != null) return;
 
             List<Routine> routines = new List<Routine>();
 
             routines.Add(new Routine((Type)null, "xml_parse", (Type)null, "Erstelle ein XML Dokument (XDocument) aus einem String."));
-            routines.Add(new Routine(typeof(string), "xml_string", (Type)null, "Gibt das XML als String zurück."));
+            routines.Add(new Routine(typeof(string), "xml_string", (Type)null, "Gibt das XML (XDocument/XNode/XAttribute) als String zurück."));
 
-            routines.Add(new Routine((Type)null, "xml_select", (Type)null, (Type)null, "Wählt einen(!) Knoten per XPath aus (gibt XElement/XAttribute/XText zurück oder null)."));
-            routines.Add(new Routine(typeof(ScriptStack.Runtime.ArrayList), "xml_select_all", (Type)null, (Type)null, "Wählt mehrere Knoten per XPath aus (gibt ArrayList von Nodes zurück)."));
+            routines.Add(new Routine((Type)null, "xml_select", (Type)null, (Type)null, "Wählt einen(!) Knoten per XPath aus (XElement/XAttribute/XText) oder null."));
+            routines.Add(new Routine(typeof(ScriptStack.Runtime.ArrayList), "xml_select_all", (Type)null, (Type)null, "Wählt mehrere Knoten per XPath aus (ArrayList von Nodes)."));
 
-            routines.Add(new Routine(typeof(string), "xml_value", (Type)null, "Liest den String-Value eines Nodes (XElement/XAttribute/XText)"));
+            routines.Add(new Routine(typeof(string), "xml_value", (Type)null, "Liest den String-Value eines Nodes (XElement/XAttribute/XText)."));
             routines.Add(new Routine(typeof(string), "xml_attr", (Type)null, (Type)null, "Liest ein Attribut (Name) von einem Element (oder null)."));
             routines.Add(new Routine(typeof(bool), "xml_has", (Type)null, (Type)null, "Prüft ob ein XPath ein Ergebnis liefert."));
 
-            routines.Add(new Routine((Type)null, "xml_set", (Type)null, (Type)null, (Type)null, "Setzt den Value eines Elements/Attributes per XPath (einfacher Setter)."));
+            routines.Add(new Routine((Type)null, "xml_set", (Type)null, (Type)null, (Type)null, "Setzt den Value eines Elements/Attributes per XPath (erstes Match)."));
 
+            // type checks
             routines.Add(new Routine(typeof(bool), "xml_is_elem", (Type)null, "True wenn Node ein XElement ist."));
             routines.Add(new Routine(typeof(bool), "xml_is_attr", (Type)null, "True wenn Node ein XAttribute ist."));
 
-            routines.Add(new Routine((Type)null, "xml_iter", (Type)null, "Iterator für XML Nodes (XDocument/XElement/XAttribute/XText/string xml)."));
+            // iterators (alle 1 Parameter wie json_iter/yaml_iter)
+            routines.Add(new Routine((Type)null, "xml_iter", (Type)null, "Iterator über Child-Nodes (XDocument/XElement/XNode oder XML-String)."));
+            routines.Add(new Routine((Type)null, "xml_iter_all", (Type)null, "Iterator über Descendants (Unter-Elemente) eines Elements."));
+            routines.Add(new Routine((Type)null, "xml_iter_attr", (Type)null, "Iterator über Attribute eines Elements."));
+
             routines.Add(new Routine(typeof(bool), "xml_next", (Type)null, "Iterator: nächstes Element. true wenn vorhanden."));
             routines.Add(new Routine(typeof(string), "xml_name", (Type)null, "Iterator: Name (Element/Attribut) oder null."));
-            routines.Add(new Routine(typeof(int), "xml_index", (Type)null, "Iterator: Index (nur wenn über eine Liste iteriert wird), sonst -1."));
-            routines.Add(new Routine((Type)null, "xml_node", (Type)null, "Iterator: aktueller Node (XElement/XAttribute/XText)."));
+            routines.Add(new Routine(typeof(int), "xml_index", (Type)null, "Iterator: Index (0..n-1) oder -1 wenn kein current."));
+            routines.Add(new Routine((Type)null, "xml_node", (Type)null, "Iterator: aktueller Node (XElement/XAttribute/XText/XNode)."));
             routines.Add(new Routine(typeof(string), "xml_value_it", (Type)null, "Iterator: Value des aktuellen Nodes (wie xml_value)."));
 
             exportedRoutines = routines.AsReadOnly();
-
         }
 
-        public object Invoke(String routine, List<object> parameters)
+        public ReadOnlyCollection<Routine> Routines
         {
+            get { return exportedRoutines; }
+        }
 
+        public object Invoke(string routine, List<object> parameters)
+        {
             if (routine == "xml_parse")
             {
                 string xml = (string)parameters[0];
-                // PreserveWhitespace=false (Default), damit "pretty" Ausgabe möglich bleibt.
                 var doc = XDocument.Parse(xml, LoadOptions.SetLineInfo);
                 return doc;
             }
@@ -64,29 +69,25 @@ namespace ScriptStack
             if (routine == "xml_string")
             {
                 var node = parameters[0];
-                if (node is null) return null;
-
-                if (node is XDocument d) return d.ToString(SaveOptions.DisableFormatting);
-                if (node is XNode xn) return xn.ToString(SaveOptions.DisableFormatting);
-                if (node is XAttribute xa) return xa.ToString();
-
-                return node.ToString();
+                if (node is XDocument d) return d.ToString(SaveOptions.None);
+                if (node is XNode xn) return xn.ToString(SaveOptions.None);
+                return XmlToString(parameters[0]);
             }
 
             if (routine == "xml_select")
             {
-                var root = parameters[0];
+                object root = parameters[0];
                 string xpath = (string)parameters[1];
 
-                XNode? xroot = ToXNode(root);
-                if (xroot is null) return null;
+                XNode xroot = ToXNode(root);
+                if (xroot == null) return null;
 
                 object eval = xroot.XPathEvaluate(xpath);
 
-                if (eval is IEnumerable<object> en)
+                if (eval is IEnumerable<object>)
                 {
-                    // first or null
-                    var first = en.Cast<object>().FirstOrDefault();
+                    IEnumerable<object> en = (IEnumerable<object>)eval;
+                    object first = en.Cast<object>().FirstOrDefault();
                     return UnwrapXPathObject(first);
                 }
 
@@ -95,18 +96,18 @@ namespace ScriptStack
 
             if (routine == "xml_select_all")
             {
-                var root = parameters[0];
+                object root = parameters[0];
                 string xpath = (string)parameters[1];
 
-                XNode? xroot = ToXNode(root);
-                if (xroot is null) return new ScriptStack.Runtime.ArrayList();
+                XNode xroot = ToXNode(root);
+                var result = new ScriptStack.Runtime.ArrayList();
+                if (xroot == null) return result;
 
                 object eval = xroot.XPathEvaluate(xpath);
 
-                var result = new ScriptStack.Runtime.ArrayList();
-
-                if (eval is IEnumerable<object> en)
+                if (eval is IEnumerable<object>)
                 {
+                    IEnumerable<object> en = (IEnumerable<object>)eval;
                     foreach (var item in en)
                         result.Add(UnwrapXPathObject(item));
                 }
@@ -120,88 +121,87 @@ namespace ScriptStack
 
             if (routine == "xml_value")
             {
-                var node = parameters[0];
-                if (node is null) return null;
-
-                if (node is XDocument d) return d.Root?.Value;
-                if (node is XElement e) return e.Value;
-                if (node is XAttribute a) return a.Value;
-                if (node is XText t) return t.Value;
-                if (node is XNode xn) return xn.ToString();
-
-                return node.ToString();
+                return XmlNodeValue(parameters[0]);
             }
 
             if (routine == "xml_attr")
             {
-                var node = parameters[0];
+                object node = parameters[0];
                 string attrName = (string)parameters[1];
 
-                if (node is XElement e)
-                    return e.Attribute(attrName)?.Value;
+                XElement e = node as XElement;
+                if (e != null) return e.Attribute(attrName)?.Value;
 
-                // wenn ein Document kommt, nehmen wir Root
-                if (node is XDocument d)
-                    return d.Root?.Attribute(attrName)?.Value;
+                XDocument d = node as XDocument;
+                if (d != null) return d.Root?.Attribute(attrName)?.Value;
 
                 return null;
             }
 
             if (routine == "xml_has")
             {
-                var root = parameters[0];
+                object root = parameters[0];
                 string xpath = (string)parameters[1];
 
-                XNode? xroot = ToXNode(root);
-                if (xroot is null) return false;
+                XNode xroot = ToXNode(root);
+                if (xroot == null) return false;
 
                 object eval = xroot.XPathEvaluate(xpath);
-                if (eval is IEnumerable<object> en)
+
+                if (eval is IEnumerable<object>)
+                {
+                    IEnumerable<object> en = (IEnumerable<object>)eval;
                     return en.Cast<object>().Any();
+                }
 
                 return eval != null;
             }
 
             if (routine == "xml_set")
             {
-                // einfacher Setter: XPath muss auf Element oder Attribute zeigen.
-                // value wird immer als string gesetzt (wie bei JSON plugin heuristics).
-                var root = parameters[0];
+                object root = parameters[0];
                 string xpath = (string)parameters[1];
-                object? valueObj = parameters[2];
-                string value = valueObj?.ToString() ?? "";
+                object valueObj = parameters[2];
+                string value = valueObj != null ? valueObj.ToString() : "";
 
-                // XDocument oder XElement als Mutations-Root
-                XNode? xroot = root as XNode;
-                if (root is XAttribute) throw new InvalidOperationException("xml_set: root darf kein Attribut sein.");
-                if (xroot is null) throw new InvalidOperationException("xml_set: erwartet XDocument oder XElement.");
+                if (root is XAttribute)
+                    throw new InvalidOperationException("xml_set: root darf kein Attribut sein.");
 
-                // Evaluate liefert Iterator mit XObject
+                XNode xroot = root as XNode;
+                if (xroot == null)
+                    throw new InvalidOperationException("xml_set: erwartet XDocument oder XElement.");
+
                 object eval = xroot.XPathEvaluate(xpath);
 
-                // Wir setzen nur das erste Ergebnis.
-                object? target = null;
-                if (eval is IEnumerable<object> en)
+                object target = null;
+                if (eval is IEnumerable<object>)
+                {
+                    IEnumerable<object> en = (IEnumerable<object>)eval;
                     target = en.Cast<object>().FirstOrDefault();
+                }
                 else
+                {
                     target = eval;
+                }
 
                 target = UnwrapXPathObject(target);
 
-                if (target is XElement te)
+                XElement te = target as XElement;
+                if (te != null)
                 {
                     te.Value = value;
                     return XmlToString(root);
                 }
 
-                if (target is XAttribute ta)
+                XAttribute ta = target as XAttribute;
+                if (ta != null)
                 {
                     ta.Value = value;
                     return XmlToString(root);
                 }
 
-                // falls XPath auf Text node zeigt
-                if (target is XText tt)
+                XText tt = target as XText;
+                if (tt != null)
                 {
                     tt.Value = value;
                     return XmlToString(root);
@@ -212,8 +212,9 @@ namespace ScriptStack
 
             if (routine == "xml_is_elem")
             {
-                var n = parameters[0];
-                if (n is XDocument d) n = d.Root;
+                object n = parameters[0];
+                XDocument d = n as XDocument;
+                if (d != null) n = d.Root;
                 return n is XElement;
             }
 
@@ -222,145 +223,162 @@ namespace ScriptStack
                 return parameters[0] is XAttribute;
             }
 
+            // iterators (alle 1 Parameter)
             if (routine == "xml_iter")
             {
-                // xml_iter(nodeOrXmlString, mode?)
-                // mode optional: "children" (default), "attributes", "descendants"
-                object p0 = parameters[0];
-                string mode = parameters.Count >= 2 && parameters[1] != null ? parameters[1].ToString()! : "children";
+                object root = CoerceToXmlObject(parameters[0]);
+                return new XmlIterator(root, XmlIterMode.Children);
+            }
 
-                var root = CoerceToXmlObject(p0);
-                return new XmlIterator(root, mode);
+            if (routine == "xml_iter_all")
+            {
+                object root = CoerceToXmlObject(parameters[0]);
+                return new XmlIterator(root, XmlIterMode.Descendants);
+            }
+
+            if (routine == "xml_iter_attr")
+            {
+                object root = CoerceToXmlObject(parameters[0]);
+                return new XmlIterator(root, XmlIterMode.Attributes);
             }
 
             if (routine == "xml_next")
             {
-                var it = (XmlIterator)parameters[0];
+                XmlIterator it = (XmlIterator)parameters[0];
                 return it.MoveNext();
             }
 
             if (routine == "xml_name")
             {
-                var it = (XmlIterator)parameters[0];
+                XmlIterator it = (XmlIterator)parameters[0];
                 return it.CurrentName;
             }
 
             if (routine == "xml_index")
             {
-                var it = (XmlIterator)parameters[0];
+                XmlIterator it = (XmlIterator)parameters[0];
                 return it.CurrentIndex;
             }
 
             if (routine == "xml_node")
             {
-                var it = (XmlIterator)parameters[0];
+                XmlIterator it = (XmlIterator)parameters[0];
                 return it.CurrentNode;
             }
 
             if (routine == "xml_value_it")
             {
-                var it = (XmlIterator)parameters[0];
+                XmlIterator it = (XmlIterator)parameters[0];
                 return XmlNodeValue(it.CurrentNode);
             }
 
             return null;
-
         }
 
-        public ReadOnlyCollection<Routine> Routines
-        {
-            get { return exportedRoutines; }
-        }
+        // ---------- helpers ----------
 
-        // --- helpers ---
-
-        private static XNode? ToXNode(object? o)
+        private static XNode ToXNode(object o)
         {
-            if (o is null) return null;
-            if (o is XDocument d) return d;
-            if (o is XElement e) return e;
-            if (o is XNode n) return n;
+            if (o == null) return null;
+
+            XDocument d = o as XDocument;
+            if (d != null) return d;
+
+            XElement e = o as XElement;
+            if (e != null) return e;
+
+            XNode n = o as XNode;
+            if (n != null) return n;
+
             return null;
         }
 
-        private static object? UnwrapXPathObject(object? o)
-        {
-            if (o is null) return null;
-
-            // LINQ to XML XPath liefert oft XElement/XAttribute/XText direkt.
-            if (o is XElement || o is XAttribute || o is XText || o is XDocument) return o;
-
-            // manchmal kommt XPathNavigator
-            if (o is XPathNavigator nav)
-            {
-                if (nav.NodeType == XPathNodeType.Attribute)
-                {
-                    // versuche als XAttribute zurückzugeben: nicht trivial -> gebe string value zurück
-                    return nav.Value;
-                }
-
-                if (nav.NodeType == XPathNodeType.Text)
-                    return nav.Value;
-
-                // element
-                return nav.OuterXml;
-            }
-
-            // boolean/number/string aus XPathEvaluate
-            return o;
-        }
-
-        private static string XmlToString(object root)
-        {
-            if (root is XDocument d) return d.ToString(SaveOptions.DisableFormatting);
-            if (root is XNode n) return n.ToString(SaveOptions.DisableFormatting);
-            if (root is XAttribute a) return a.ToString();
-            return root.ToString();
-        }
-
-
         private static object CoerceToXmlObject(object o)
         {
+            if (o == null) return null;
+
             if (o is XDocument || o is XElement || o is XAttribute || o is XText || o is XNode)
                 return o;
 
-            if (o is string s)
-            {
-                // raw xml string -> parse to XDocument
+            string s = o as string;
+            if (s != null)
                 return XDocument.Parse(s, LoadOptions.SetLineInfo);
-            }
 
             throw new InvalidOperationException("xml_iter erwartet XDocument/XElement/XAttribute/XText/XNode oder XML-String.");
         }
 
-        private static string? XmlNodeValue(object? node)
+        private static string XmlToString(object node)
         {
-            if (node is null) return null;
+            if (node == null) return null;
 
-            if (node is XDocument d) return d.Root?.Value;
-            if (node is XElement e) return e.Value;
-            if (node is XAttribute a) return a.Value;
-            if (node is XText t) return t.Value;
-            if (node is XNode xn) return xn.ToString(SaveOptions.DisableFormatting);
+            XDocument d = node as XDocument;
+            if (d != null) return d.ToString(SaveOptions.DisableFormatting);
+
+            XNode xn = node as XNode;
+            if (xn != null) return xn.ToString(SaveOptions.DisableFormatting);
+
+            XAttribute xa = node as XAttribute;
+            if (xa != null) return xa.ToString();
 
             return node.ToString();
+        }
+
+        private static string XmlNodeValue(object node)
+        {
+            if (node == null) return null;
+
+            XDocument d = node as XDocument;
+            if (d != null) return d.Root != null ? d.Root.Value : null;
+
+            XElement e = node as XElement;
+            if (e != null) return e.Value;
+
+            XAttribute a = node as XAttribute;
+            if (a != null) return a.Value;
+
+            XText t = node as XText;
+            if (t != null) return t.Value;
+
+            XNode xn = node as XNode;
+            if (xn != null) return xn.ToString(SaveOptions.DisableFormatting);
+
+            return node.ToString();
+        }
+
+        private static object UnwrapXPathObject(object o)
+        {
+            if (o == null) return null;
+
+            // LINQ to XML XPath liefert oft XElement/XAttribute/XText direkt.
+            if (o is XElement || o is XAttribute || o is XText || o is XDocument) return o;
+
+            // Scalar results from XPathEvaluate (bool/number/string) return as-is
+            return o;
+        }
+
+        // ---------- iterator ----------
+
+        private enum XmlIterMode
+        {
+            Children,
+            Descendants,
+            Attributes
         }
 
         private sealed class XmlIterator
         {
             private readonly object _root;
-            private readonly string _mode;
+            private readonly XmlIterMode _mode;
 
-            private IEnumerator<object>? _enum;
+            private IEnumerator<object> _enum;
             private bool _hasCurrent;
             private int _index;
+            private object _current;
 
-            private object? _current;
-
-            public XmlIterator(object root, string mode)
+            public XmlIterator(object root, XmlIterMode mode)
             {
                 _root = root ?? throw new ArgumentNullException(nameof(root));
-                _mode = (mode ?? "children").Trim().ToLowerInvariant();
+                _mode = mode;
                 Reset();
             }
 
@@ -369,36 +387,37 @@ namespace ScriptStack
                 _hasCurrent = false;
                 _index = -1;
                 _current = null;
+                _enum = null;
 
-                // normalize root
                 object r = _root;
 
+                // XDocument -> Root (wenn vorhanden)
                 XDocument d = r as XDocument;
                 if (d != null)
-                {
-                    r = (d.Root != null) ? (object)d.Root : (object)d;
-                }
+                    r = d.Root != null ? (object)d.Root : (object)d;
 
-                if (r is XElement e)
+                XElement e = r as XElement;
+                if (e != null)
                 {
-                    if (_mode == "attributes")
+                    if (_mode == XmlIterMode.Attributes)
                     {
                         _enum = e.Attributes().Cast<object>().GetEnumerator();
                         return;
                     }
 
-                    if (_mode == "descendants")
+                    if (_mode == XmlIterMode.Descendants)
                     {
+                        // nur Elemente (wie "descendants" gemeint)
                         _enum = e.Descendants().Cast<object>().GetEnumerator();
                         return;
                     }
 
-                    // default: children nodes (elements + text nodes)
+                    // children: Nodes() (Elemente + Text + Kommentare etc.)
                     _enum = e.Nodes().Cast<object>().GetEnumerator();
                     return;
                 }
 
-                // Attribute/Text/Node: iterator über "nur dieses Element"
+                // Attribut/Text/Node: iterator über "nur dieses Element"
                 if (r is XAttribute || r is XText || r is XNode)
                 {
                     _enum = Single(r).GetEnumerator();
@@ -429,24 +448,33 @@ namespace ScriptStack
                 return true;
             }
 
-            public int CurrentIndex => _hasCurrent ? _index : -1;
+            public int CurrentIndex
+            {
+                get { return _hasCurrent ? _index : -1; }
+            }
 
-            public string? CurrentName
+            public string CurrentName
             {
                 get
                 {
                     if (!_hasCurrent) return null;
 
-                    if (_current is XElement e) return e.Name.LocalName;
-                    if (_current is XAttribute a) return a.Name.LocalName;
+                    XElement e = _current as XElement;
+                    if (e != null) return e.Name.LocalName;
 
-                    return null; // Text nodes haben keinen Namen
+                    XAttribute a = _current as XAttribute;
+                    if (a != null) return a.Name.LocalName;
+
+                    return null;
                 }
             }
 
-            public object? CurrentNode => _hasCurrent ? _current : null;
+            public object CurrentNode
+            {
+                get { return _hasCurrent ? _current : null; }
+            }
         }
-
+    
     }
 
 }
