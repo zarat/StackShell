@@ -66,7 +66,9 @@ function main() {
 
 	dfSet(h, 3, "name", "Jango");
 	
-	dfSetCsvFmt(h, "float=0.########;double=0.################;culture=invariant;quoteAll=1");
+	dfSetCsvFmt(h, "float=0.########;double=0.################;culture=invariant;quoteAll=0");
+	// oder
+	// dfSetCsvFmt(h, "float=0.00;double=0.00;culture=invariant;quoteAll=1");
 	
 	dfSaveCsv(h, "out.csv", ",", 1);
 
