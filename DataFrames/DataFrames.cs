@@ -9,6 +9,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace ScriptStack
 {
@@ -132,6 +133,11 @@ namespace ScriptStack
             routines.Add(new Routine(typeof(int), "dfSortBy", sortByParams,
                 "Multi-Sort: dfSortBy(handle, colsArray, ascSpec). ascSpec: 1/0 oder [1,0,1]. -> new handle"));
 
+            var likeParams = new List<Type> { typeof(int), (Type)null, typeof(string), typeof(int) };
+            routines.Add(new Routine(typeof(int), "dfFilterLike", likeParams,
+                "Filter: LIKE pattern (% und _). dfFilterLike(handle, colIndex|colName, pattern, caseFlag 1/0) -> new handle"));
+
+            routines.Add(new Routine(typeof(ScriptStack.Runtime.ArrayList), "dfSelectLike", likeParams, "Select: Werte aus Spalte, die LIKE matchen. -> ArrayList"));
 
             exportedRoutines = routines.AsReadOnly();
         }
@@ -208,6 +214,13 @@ namespace ScriptStack
 
                     case "dfSortBy":
                         return DfSortBy(parameters);
+
+                    case "dfFilterLike":
+                        return DfFilterLike(parameters);
+
+                    case "dfSelectLike":
+                        return DfSelectLike(parameters);
+
                 }
 
                 return null;
@@ -725,6 +738,57 @@ namespace ScriptStack
             return newHandle;
         }
 
+        private int DfFilterLike(List<object> p)
+        {
+            int handle = Convert.ToInt32(p[0], CultureInfo.InvariantCulture);
+            object colSpec = p[1];
+            string pattern = (string)p[2];
+            int caseFlag = Convert.ToInt32(p[3], CultureInfo.InvariantCulture);
+
+            var df = GetDf(handle);
+            int colIndex = ResolveColumnIndex(df, colSpec);
+
+            var rx = LikeToRegex(pattern, caseInsensitive: (caseFlag != 0));
+
+            var filter = new BooleanDataFrameColumn("filter", df.Rows.Count);
+
+            for (long r = 0; r < df.Rows.Count; r++)
+            {
+                object cell = df[r, colIndex];
+                string s = cell?.ToString() ?? "";
+                filter[r] = rx.IsMatch(s);
+            }
+
+            var newDf = df.Filter(filter);
+            int newHandle = _nextHandle++;
+            _frames[newHandle] = newDf;
+            return newHandle;
+        }
+
+        private ScriptStack.Runtime.ArrayList DfSelectLike(List<object> p)
+        {
+            int handle = Convert.ToInt32(p[0], CultureInfo.InvariantCulture);
+            object colSpec = p[1];
+            string pattern = (string)p[2];
+            int caseFlag = Convert.ToInt32(p[3], CultureInfo.InvariantCulture);
+
+            var df = GetDf(handle);
+            int colIndex = ResolveColumnIndex(df, colSpec);
+
+            var rx = LikeToRegex(pattern, caseInsensitive: (caseFlag != 0));
+
+            var arr = new ScriptStack.Runtime.ArrayList();
+            for (long r = 0; r < df.Rows.Count; r++)
+            {
+                object cell = df[r, colIndex];
+                string s = cell?.ToString() ?? "";
+                if (rx.IsMatch(s))
+                    arr.Add(NormalizeValue(cell));
+            }
+
+            return arr;
+        }
+
         // -------------------
         // Helpers
         // -------------------
@@ -1035,6 +1099,59 @@ namespace ScriptStack
 
             // Fallback
             return Enumerable.Repeat(true, count).ToList();
+        }
+
+        private static Regex LikeToRegex(string likePattern, bool caseInsensitive)
+        {
+            if (likePattern == null) likePattern = "";
+
+            // SQL-LIKE: % = .*   _ = .
+            // Escaping: \% \_ \\  (Backslash)
+            var sb = new StringBuilder();
+            sb.Append("^");
+
+            bool escaping = false;
+            foreach (char ch in likePattern)
+            {
+                if (escaping)
+                {
+                    sb.Append(Regex.Escape(ch.ToString()));
+                    escaping = false;
+                    continue;
+                }
+
+                if (ch == '\\')
+                {
+                    escaping = true;
+                    continue;
+                }
+
+                if (ch == '%')
+                {
+                    sb.Append(".*");
+                }
+                else if (ch == '_')
+                {
+                    sb.Append(".");
+                }
+                else
+                {
+                    sb.Append(Regex.Escape(ch.ToString()));
+                }
+            }
+
+            if (escaping)
+            {
+                // Pattern endet mit "\" -> treat as literal "\"
+                sb.Append(Regex.Escape("\\"));
+            }
+
+            sb.Append("$");
+
+            var opts = RegexOptions.CultureInvariant;
+            if (caseInsensitive) opts |= RegexOptions.IgnoreCase;
+
+            return new Regex(sb.ToString(), opts);
         }
 
     }
