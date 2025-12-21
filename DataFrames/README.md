@@ -28,7 +28,7 @@ function main() {
 	print(dfInfo(h3));
 
 	print(dfDescribe(h, ""));           // describe für alle numerischen
-	print(dfDescribe(h, "id"));         // describe nur für "id"
+	print(dfDescribe(h, "punkte"));         // describe nur für "id"
 
 	// sort
 	var hs = dfSort(h, "name", 1);
@@ -64,8 +64,13 @@ function main() {
 	var p = dfFilterLike(h, "name", "P_nk", 1);
 	print(dfHead(p, 10));
 
-	dfSet(h, 3, "P!nk", "Jango");
+	dfSet(h, 3, "name", "Jango");
+	
+	dfSetCsvFmt(h, "float=0.########;double=0.################;culture=invariant;quoteAll=1");
+	
 	dfSaveCsv(h, "out.csv", ",", 1);
+
+	dfResetCsvFmt(h); // reset format
 
 	dfClose(h);
 
