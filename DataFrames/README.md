@@ -31,7 +31,7 @@ function main() {
 	print(dfDescribe(h, "id"));         // describe nur für "id"
 
 	// sort
-	var hs = dfSort(h, "name", 1);      // 1 = aufsteigend
+	var hs = dfSort(h, "name", 1);
 	print(dfHead(hs, 10));
 
 	// filter >
@@ -50,6 +50,19 @@ function main() {
 
 	var le = dfFilterLE(h, "id", 2);
 	print(dfHead(le, 10));
+	
+	// alle Emails von sony:
+	var sony = dfFilterLike(h, "email", "%@sony.com", 1);
+	print(dfHead(sony, 10));
+
+	// alle Namen die mit "B" anfangen:
+	var b = dfFilterLike(h, "name", "B%", 1);
+	print(dfHead(b, 10));
+
+	// Unterstrich: genau ein Zeichen
+	// z.B. "P!nk" würde "P_nk" matchen
+	var p = dfFilterLike(h, "name", "P_nk", 1);
+	print(dfHead(p, 10));
 
 	dfSet(h, 3, "P!nk", "Jango");
 	dfSaveCsv(h, "out.csv", ",", 1);
