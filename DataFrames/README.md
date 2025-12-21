@@ -31,7 +31,7 @@ function main() {
 	print(dfDescribe(h, "id"));         // describe nur für "id"
 
 	// sort
-	var hs = dfSort(h, "name", 1);
+	var hs = dfSort(h, "name", 1);      // 1 = aufsteigend
 	print(dfHead(hs, 10));
 
 	// filter >
