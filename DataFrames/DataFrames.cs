@@ -25,6 +25,18 @@ namespace ScriptStack
         private readonly Dictionary<int, Microsoft.Data.Analysis.DataFrame> _frames = new Dictionary<int, Microsoft.Data.Analysis.DataFrame>();
         private int _nextHandle = 1;
 
+        private readonly Dictionary<int, CsvFmtOptions> _csvFmtByHandle = new Dictionary<int, CsvFmtOptions>();
+
+        // Global defaults (wenn für Handle nichts gesetzt ist)
+        private readonly CsvFmtOptions _globalCsvFmt = new CsvFmtOptions
+        {
+            FloatFormat = "G9",
+            DoubleFormat = "G17",
+            DecimalFormat = "G29",
+            QuoteAll = false,
+            Culture = CultureInfo.InvariantCulture
+        };
+
         public DataFrames()
         {
             if (exportedRoutines != null) return;
@@ -139,6 +151,20 @@ namespace ScriptStack
 
             routines.Add(new Routine(typeof(ScriptStack.Runtime.ArrayList), "dfSelectLike", likeParams, "Select: Werte aus Spalte, die LIKE matchen. -> ArrayList"));
 
+
+            routines.Add(new Routine(typeof(int), "dfSetCsvFmt", typeof(int), typeof(string), "Set default CSV format options for handle. opts: \"k=v;k=v\""));
+
+            routines.Add(new Routine(typeof(int), "dfResetCsvFmt", typeof(int), "Reset CSV format options for handle (back to global defaults)."));
+
+            List<Type> saveCSVExParams = new List<Type>();
+            saveCSVExParams.Add(typeof(int));
+            saveCSVExParams.Add(typeof(string));
+            saveCSVExParams.Add(typeof(string));
+            saveCSVExParams.Add(typeof(int));
+            saveCSVExParams.Add(typeof(string));
+            routines.Add(new Routine(typeof(int), "dfSaveCsvEx", saveCSVExParams, "Save CSV with optional override opts: dfSaveCsvEx(handle,path,sep,header, \"k=v;...\")"));
+
+
             exportedRoutines = routines.AsReadOnly();
         }
 
@@ -221,6 +247,15 @@ namespace ScriptStack
                     case "dfSelectLike":
                         return DfSelectLike(parameters);
 
+                    case "dfSetCsvFmt":
+                        return DfSetCsvFmt(parameters);
+
+                    case "dfResetCsvFmt":
+                        return DfResetCsvFmt(parameters);
+
+                    case "dfSaveCsvEx":
+                        return DfSaveCsvEx(parameters);
+
                 }
 
                 return null;
@@ -249,7 +284,12 @@ namespace ScriptStack
             if (!File.Exists(path))
                 throw new ScriptStackException("CSV nicht gefunden: " + path);
 
-            var df = Microsoft.Data.Analysis.DataFrame.LoadCsv(path, separator: sep, header: header);
+            var df = Microsoft.Data.Analysis.DataFrame.LoadCsv(
+                path, 
+                separator: sep, 
+                header: header, 
+                cultureInfo: CultureInfo.InvariantCulture // Wichtig wegen Tausendertrennzeichen
+            );
 
             int handle = _nextHandle++;
             _frames[handle] = df;
@@ -261,7 +301,7 @@ namespace ScriptStack
         /// </summary>
         /// <param name="p"></param>
         /// <returns></returns>
-        private int DfSaveCsv(List<object> p)
+        private int DfSaveCsv1(List<object> p)
         {
 
             int handle = Convert.ToInt32(p[0], CultureInfo.InvariantCulture);
@@ -302,7 +342,26 @@ namespace ScriptStack
             return bytes > 0 ? 1 : -1;
         }
 
-        private int DfSaveCsv1(List<object> p)
+        private int DfSaveCsv(List<object> p)
+        {
+            int handle = Convert.ToInt32(p[0], CultureInfo.InvariantCulture);
+            string path = (string)p[1];
+            string sepStr = (string)p[2];
+            int headerFlag = Convert.ToInt32(p[3], CultureInfo.InvariantCulture);
+
+            if (!_frames.TryGetValue(handle, out var df))
+                return -1;
+
+            if (string.IsNullOrEmpty(sepStr)) sepStr = ",";
+            char sep = sepStr[0];
+            bool header = headerFlag != 0;
+
+            var fmt = GetFmtForHandle(handle);      // <-- default pro handle
+            SaveCsvManualFormatted(df, Path.GetFullPath(path), sep, header, fmt);
+            return 1;
+        }
+
+        private int DfSaveCsv2(List<object> p)
         {
 
             Console.WriteLine("In DfSaveCsv");
@@ -433,9 +492,19 @@ namespace ScriptStack
             return arr;
         }
 
+        private int DfClose1(List<object> p)
+        {
+            int handle = Convert.ToInt32(p[0], CultureInfo.InvariantCulture);
+            if (_frames.Remove(handle))
+                return 1;
+            return -1;
+        }
+
         private int DfClose(List<object> p)
         {
             int handle = Convert.ToInt32(p[0], CultureInfo.InvariantCulture);
+            _csvFmtByHandle.Remove(handle);
+
             if (_frames.Remove(handle))
                 return 1;
             return -1;
@@ -763,6 +832,47 @@ namespace ScriptStack
             int newHandle = _nextHandle++;
             _frames[newHandle] = newDf;
             return newHandle;
+        }
+
+        private int DfSetCsvFmt(List<object> p)
+        {
+            int handle = Convert.ToInt32(p[0], CultureInfo.InvariantCulture);
+            string optsStr = (string)p[1];
+
+            // Basis ist global, dann überschreiben mit opts
+            var merged = ParseCsvFmtOptions(optsStr, baseOpts: _globalCsvFmt);
+            _csvFmtByHandle[handle] = merged;
+            return 1;
+        }
+
+        private int DfResetCsvFmt(List<object> p)
+        {
+            int handle = Convert.ToInt32(p[0], CultureInfo.InvariantCulture);
+            _csvFmtByHandle.Remove(handle);
+            return 1;
+        }
+
+        private int DfSaveCsvEx(List<object> p)
+        {
+            int handle = Convert.ToInt32(p[0], CultureInfo.InvariantCulture);
+            string path = (string)p[1];
+            string sepStr = (string)p[2];
+            int headerFlag = Convert.ToInt32(p[3], CultureInfo.InvariantCulture);
+            string overrideOptsStr = (string)p[4];
+
+            if (!_frames.TryGetValue(handle, out var df))
+                return -1;
+
+            if (string.IsNullOrEmpty(sepStr)) sepStr = ",";
+            char sep = sepStr[0];
+            bool header = headerFlag != 0;
+
+            // Basis: handle-default (oder global), dann override drüber
+            var baseFmt = GetFmtForHandle(handle);
+            var merged = ParseCsvFmtOptions(overrideOptsStr, baseOpts: baseFmt);
+
+            SaveCsvManualFormatted(df, Path.GetFullPath(path), sep, header, merged);
+            return 1;
         }
 
         private ScriptStack.Runtime.ArrayList DfSelectLike(List<object> p)
@@ -1152,6 +1262,124 @@ namespace ScriptStack
             if (caseInsensitive) opts |= RegexOptions.IgnoreCase;
 
             return new Regex(sb.ToString(), opts);
+        }
+
+        private sealed class CsvFmtOptions
+        {
+            public string FloatFormat = "G9";    // float32: gute “schöne” Ausgabe ohne Müll
+            public string DoubleFormat = "G17";  // double: round-trip
+            public string DecimalFormat = "G29"; // decimal: maximal sinnvoll
+            public bool QuoteAll = false;
+            public CultureInfo Culture = CultureInfo.InvariantCulture;
+
+            public CsvFmtOptions Clone() => new CsvFmtOptions
+            {
+                FloatFormat = this.FloatFormat,
+                DoubleFormat = this.DoubleFormat,
+                DecimalFormat = this.DecimalFormat,
+                QuoteAll = this.QuoteAll,
+                Culture = this.Culture
+            };
+        }
+
+        private CsvFmtOptions GetFmtForHandle(int handle)
+        {
+            if (_csvFmtByHandle.TryGetValue(handle, out var fmt))
+                return fmt;
+            return _globalCsvFmt;
+        }
+
+        // optsString überschreibt nur Keys, die drin stehen.
+        // baseOpts liefert Defaults für alles andere.
+        private static CsvFmtOptions ParseCsvFmtOptions(string optsString, CsvFmtOptions baseOpts)
+        {
+            var o = (baseOpts ?? new CsvFmtOptions()).Clone();
+
+            if (string.IsNullOrWhiteSpace(optsString))
+                return o;
+
+            var parts = optsString.Split(';', StringSplitOptions.RemoveEmptyEntries);
+            foreach (var raw in parts)
+            {
+                var p = raw.Trim();
+                int eq = p.IndexOf('=');
+                if (eq <= 0) continue;
+
+                var key = p.Substring(0, eq).Trim().ToLowerInvariant();
+                var val = p.Substring(eq + 1).Trim();
+
+                switch (key)
+                {
+                    case "float": o.FloatFormat = val; break;
+                    case "double": o.DoubleFormat = val; break;
+                    case "dec":
+                    case "decimal": o.DecimalFormat = val; break;
+
+                    case "quoteall":
+                    case "quote":
+                        o.QuoteAll = (val == "1" || val.Equals("true", StringComparison.OrdinalIgnoreCase));
+                        break;
+
+                    case "culture":
+                        if (string.IsNullOrWhiteSpace(val) || val.Equals("invariant", StringComparison.OrdinalIgnoreCase))
+                            o.Culture = CultureInfo.InvariantCulture;
+                        else
+                            o.Culture = CultureInfo.GetCultureInfo(val);
+                        break;
+                }
+            }
+
+            return o;
+        }
+
+        private static void SaveCsvManualFormatted(DataFrame df, string fullPath, char sep, bool header, CsvFmtOptions fmt)
+        {
+            using var sw = new StreamWriter(fullPath, false, new UTF8Encoding(false));
+
+            if (header)
+            {
+                for (int c = 0; c < df.Columns.Count; c++)
+                {
+                    if (c > 0) sw.Write(sep);
+                    sw.Write(CsvEscape(df.Columns[c].Name, sep, fmt.QuoteAll));
+                }
+                sw.WriteLine();
+            }
+
+            for (long r = 0; r < df.Rows.Count; r++)
+            {
+                for (int c = 0; c < df.Columns.Count; c++)
+                {
+                    if (c > 0) sw.Write(sep);
+
+                    string cell = FormatCell(df[r, c], fmt);
+                    sw.Write(CsvEscape(cell, sep, fmt.QuoteAll));
+                }
+                sw.WriteLine();
+            }
+
+            sw.Flush();
+        }
+
+        private static string FormatCell(object v, CsvFmtOptions fmt)
+        {
+            if (v == null) return "";
+
+            // entscheidend: float/double so formatieren, dass 4.19999981 -> 4.2 wird
+            if (v is float ff) return ff.ToString(fmt.FloatFormat, fmt.Culture);
+            if (v is double dd) return dd.ToString(fmt.DoubleFormat, fmt.Culture);
+            if (v is decimal dm) return dm.ToString(fmt.DecimalFormat, fmt.Culture);
+
+            if (v is IFormattable f) return f.ToString(null, fmt.Culture);
+            return v.ToString() ?? "";
+        }
+
+        private static string CsvEscape(string s, char sep, bool quoteAll)
+        {
+            s ??= "";
+            bool mustQuote = quoteAll || s.Contains(sep) || s.Contains('"') || s.Contains('\n') || s.Contains('\r');
+            if (!mustQuote) return s;
+            return "\"" + s.Replace("\"", "\"\"") + "\"";
         }
 
     }
