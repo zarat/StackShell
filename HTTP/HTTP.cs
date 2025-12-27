@@ -44,6 +44,7 @@ namespace ScriptStack
 
     public class HTTP : Model
     {
+
         private static ReadOnlyCollection<Routine> exportedRoutines;
 
         private static readonly HttpClient _http = new HttpClient(new HttpClientHandler()
@@ -53,7 +54,9 @@ namespace ScriptStack
 
         public HTTP()
         {
-            if (exportedRoutines != null) return;
+
+            if (exportedRoutines != null) 
+                return;
 
             var r = new List<Routine>();
 
