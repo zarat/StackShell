@@ -1,5 +1,9 @@
 Die Provider-DLLs inkl. Abhängigkeiten müssen im Plugin-Ordner liegen.
 
+- MySQL
+- MS-SQL
+- PostgreSQL
+
 ```Javascript
 function main() {
 
