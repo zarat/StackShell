@@ -75,7 +75,8 @@ namespace ScriptStack
             get
             {
                 var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                if (Node?.Attributes == null) return d;
+                if (Node?.Attributes == null) 
+                    return d;
                 foreach (var a in Node.Attributes)
                     d[a.Name] = a.Value ?? "";
                 return d;
@@ -98,22 +99,19 @@ namespace ScriptStack
 
             r.Add(new Routine((Type)null, "dom_parse", (Type)null, "Parst HTML-Text und liefert ein DomDocument."));
             r.Add(new Routine((Type)null, "dom_select", (Type)null, (Type)null, "Selektiert Nodes via CSS (subset) oder XPath (wenn mit // oder .// beginnt). Rückgabe: List<DomNode>."));
-            r.Add(new Routine((Type)null, "dom_first", (Type)null, "Wie dom_select, aber nur erstes Element (oder null)."));
-
+            r.Add(new Routine((Type)null, "dom_first", (Type)null, (Type)null, "Wie dom_select, aber nur erstes Element (oder null)."));
             r.Add(new Routine((Type)null, "dom_html", (Type)null, "Gibt das komplette HTML des Dokuments zurück."));
+
             r.Add(new Routine((Type)null, "node_outer_html", (Type)null, "Gibt OuterHtml des Nodes zurück."));
             r.Add(new Routine((Type)null, "node_remove", (Type)null, "Entfernt den Node aus dem DOM."));
-
-            r.Add(new Routine((Type)null, "node_get_attr", (Type)null, "Liest ein Attribut. (node, name) -> string"));
-            r.Add(new Routine((Type)null, "node_set_attr", (Type)null, "Setzt ein Attribut. (node, name, value) -> void"));
-            r.Add(new Routine((Type)null, "node_remove_attr", (Type)null, "Entfernt ein Attribut. (node, name) -> void"));
-
-            r.Add(new Routine((Type)null, "node_set_text", (Type)null, "Setzt InnerText (entitisiert). (node, text) -> void"));
-            r.Add(new Routine((Type)null, "node_set_html", (Type)null, "Setzt InnerHtml. (node, html) -> void"));
-
-            r.Add(new Routine((Type)null, "node_append_html", (Type)null, "Hängt HTML ans Ende der Children. (node, htmlFragment) -> void"));
-            r.Add(new Routine((Type)null, "node_prepend_html", (Type)null, "Hängt HTML an den Anfang der Children. (node, htmlFragment) -> void"));
-            r.Add(new Routine((Type)null, "node_replace_with_html", (Type)null, "Ersetzt Node durch HTML. (node, htmlFragment) -> void"));
+            r.Add(new Routine((Type)null, "node_get_attr", (Type)null, (Type)null, "Liest ein Attribut. (node, name) -> string"));
+            r.Add(new Routine((Type)null, "node_set_attr", (Type)null, (Type)null, (Type)null, "Setzt ein Attribut. (node, name, value) -> void"));
+            r.Add(new Routine((Type)null, "node_remove_attr", (Type)null, (Type)null, "Entfernt ein Attribut. (node, name) -> void"));
+            r.Add(new Routine((Type)null, "node_set_text", (Type)null, (Type)null, "Setzt InnerText (entitisiert). (node, text) -> void"));
+            r.Add(new Routine((Type)null, "node_set_html", (Type)null, (Type)null, "Setzt InnerHtml. (node, html) -> void"));
+            r.Add(new Routine((Type)null, "node_append_html", (Type)null, (Type)null, "Hängt HTML ans Ende der Children. (node, htmlFragment) -> void"));
+            r.Add(new Routine((Type)null, "node_prepend_html", (Type)null, (Type)null, "Hängt HTML an den Anfang der Children. (node, htmlFragment) -> void"));
+            r.Add(new Routine((Type)null, "node_replace_with_html", (Type)null, (Type)null, "Ersetzt Node durch HTML. (node, htmlFragment) -> void"));
 
             exportedRoutines = r.AsReadOnly();
         }
