@@ -42,7 +42,7 @@ function testHTML() {
 
     // Resultierendes HTML ausgeben
     var out = dom_html(doc);
-    //print(out);
+    print(out);
 	
 }
 ```
