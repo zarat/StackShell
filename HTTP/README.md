@@ -1,7 +1,7 @@
 ```Javascript
-function main() {
+// A simple HTTP GET request
+function httpGET() {
 
-    // HTTP GET Request
 	var req = http_request();
 	req.Method = "GET";
 	req.Url = "https://www.orf.at";
@@ -13,7 +13,11 @@ function main() {
 	print(resp.Status);
 	print(resp.Body);
 
-    // Download file
+}
+
+// Download a file
+function downloadFile() {
+
 	var req = http_request();
 	req.Method = "GET";
 	req.Url = "https://example.com/image.jpeg";
