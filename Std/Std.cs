@@ -52,7 +52,8 @@ namespace ScriptStack
 
             routines.Add(new Routine((Type)null, "readDir", typeof(string), "Liste Dateien in einem Verzeichnis."));
             routines.Add(new Routine((Type)null, "popen", typeof(string), typeof(string), "Rufe einen Prozess mit Argumenten auf und speichere die Ausgabe in einem String."));
-
+            routines.Add(new Routine(typeof(string), "getenv", typeof(string), "Rufe eine Umgebungsvariable ab und speichere die Ausgabe in einem String."));
+            
             routines.Add(new Routine(typeof(string), "typeof", typeof(void), "Erhalte den Typ einer Variable."));
             routines.Add(new Routine(typeof(void), "parse", typeof(string), typeof(string), "Erstelle einen Typ aus einem String. char, int, float"));
 
@@ -356,6 +357,12 @@ namespace ScriptStack
             
             }
 
+            if(strFunctionName == "getenv")
+            {
+                string varName = (string)listParameters[0];
+                return Environment.GetEnvironmentVariable(varName);
+            }
+
             // ------------------------------------------------------------
             // readDir
             // ------------------------------------------------------------
@@ -488,4 +495,5 @@ namespace ScriptStack
     }
 
 }
+
 
