@@ -8,11 +8,11 @@ function main() {
 	
 	xlsx_remove_ws(wb, sheet1.Name);
 
-	print(xlsx_rows(sheet));
-	print(xlsx_cols(sheet));
+	print(xlsx_rows(sheet2));
+	print(xlsx_cols(sheet2));
 	
-	xlsx_set(sheet1, 1, 1, "Hello");
-	xlsx_set(sheet1, 2, 1, "World");
+	xlsx_set(sheet2, 1, 1, "Hello");
+	xlsx_set(sheet2, 2, 1, "World");
 	
 	wb.SaveAs("HelloWorld.xlsx");
 	
