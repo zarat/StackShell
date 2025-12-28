@@ -6,17 +6,20 @@ function main() {
 	var sheet1 = xlsx_add_ws(wb, "User");
 	var sheet2 = xlsx_add_ws(wb, "Gruppen");
 	
-	xlsx_remove_ws(wb, sheet1.Name);
+	//xlsx_remove_ws(wb, sheet1.Name);
 	
-	xlsx_set(sheet2, 1, 1, "Hello");
-	xlsx_set(sheet2, 2, 1, "World");
-
-	print(xlsx_rows(sheet2));
-	print(xlsx_cols(sheet2));
+	var sheets = xlsx_list_ws(wb);
+	var sheetname;
+	foreach(sheetname in sheets)
+		println(sheetname);
 	
-	wb.SaveAs("HelloWorld.xlsx");
+	xlsx_set(sheet1, 1, 1, 1);
+	xlsx_set(sheet1, 2, 1, 2);
+	xlsx_set_formula(sheet1, 3, 1, "=SUM(A1:A2)");
+	print(xlsx_get_formula(sheet1, 3, 1));
 	
 	//xlsx_close(wb);
+	wb.SaveAs("HelloWorld.xlsx");
 
 }
 ```
