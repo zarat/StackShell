@@ -51,7 +51,7 @@ namespace ScriptStack
             routines.Add(new Routine(typeof(int), "fwritebytes", typeof(int), typeof(byte[]), "Binärdaten (byte[]) in eine geöffnete Datei schreiben."));
 
             routines.Add(new Routine((Type)null, "readDir", typeof(string), "Liste Dateien in einem Verzeichnis."));
-            routines.Add(new Routine(typeof(string), "popen", typeof(string), typeof(string), "Rufe einen Prozess mit Argumenten auf und speichere die Ausgabe in einem String."));
+            routines.Add(new Routine((Type)null, "popen", typeof(string), typeof(string), "Rufe einen Prozess mit Argumenten auf und speichere die Ausgabe in einem String."));
 
             routines.Add(new Routine(typeof(string), "typeof", typeof(void), "Erhalte den Typ einer Variable."));
             routines.Add(new Routine(typeof(void), "parse", typeof(string), typeof(string), "Erstelle einen Typ aus einem String. char, int, float"));
@@ -311,27 +311,49 @@ namespace ScriptStack
             // ------------------------------------------------------------
             if (strFunctionName == "popen")
             {
+            
                 string executablePath = (string)listParameters[0];
                 string arguments = (string)listParameters[1];
-
+            
                 using (Process process = new Process())
                 {
                     ProcessStartInfo startInfo = new ProcessStartInfo
                     {
                         FileName = executablePath,
                         Arguments = arguments,
+                        RedirectStandardInput = true,
                         RedirectStandardOutput = true,
+                        RedirectStandardError = true,
                         UseShellExecute = false,
                         CreateNoWindow = true
                     };
-
+            
                     process.StartInfo = startInfo;
                     process.Start();
+            
+                    // Führe PowerShell-Skript aus
+                    //process.StandardInput.WriteLine(arguments);
+                    //process.StandardInput.Close();
+            
+                    string output = process.StandardOutput.ReadToEnd();
+                    string error = process.StandardError.ReadToEnd();
+            
+                    // Warten dass der Prozess beendet wird
                     process.WaitForExit();
-
-                    using (StreamReader reader = process.StandardOutput)
-                        return reader.ReadToEnd();
+            
+                    ArrayList result = new ArrayList();
+                    if (!string.IsNullOrEmpty(error))
+                    {
+                        result.Add("stderr", error);
+                    }
+                    if (!string.IsNullOrEmpty(output))
+                    {
+                        result.Add("stdout", output);
+                    }
+                    return result;
+            
                 }
+            
             }
 
             // ------------------------------------------------------------
@@ -466,3 +488,4 @@ namespace ScriptStack
     }
 
 }
+
