@@ -46,6 +46,7 @@ namespace ScriptStack
             // CSV I/O
             // dfLoadCsv(path, sep, headerFlag)
             routines.Add(new Routine(typeof(int), "dfLoadCsv", typeof(string), typeof(string), typeof(int), "Lade CSV in DataFrame. sep z.B. \",\" oder \";\". headerFlag: 1/0. -> handle"));
+            routines.Add(new Routine(typeof(int), "dfReadCsv", typeof(string), typeof(string), typeof(int), "Lade CSV in DataFrame. sep z.B. \",\" oder \";\". headerFlag: 1/0. -> handle"));
 
             // dfSaveCsv(handle, path, sep, headerFlag)
             List<Type> saveCSVParams = new List<Type>();
@@ -164,6 +165,18 @@ namespace ScriptStack
             saveCSVExParams.Add(typeof(string));
             routines.Add(new Routine(typeof(int), "dfSaveCsvEx", saveCSVExParams, "Save CSV with optional override opts: dfSaveCsvEx(handle,path,sep,header, \"k=v;...\")"));
 
+            var toCsvParams = new List<Type> { typeof(int), typeof(string), typeof(int), typeof(int) };
+            routines.Add(new Routine(typeof(string), "dfToCsv", toCsvParams, "DataFrame -> CSV String. dfToCsv(handle, sep, headerFlag, quoteAllFlag 1/0)"));
+
+            var toCsvExParams = new List<Type>
+            {
+                typeof(int),      // handle
+                typeof(string),   // sep
+                typeof(int),      // headerFlag
+                typeof(string),   // opts "k=v;..."
+                typeof(int)       // quoteAllFlag 1/0  (optional)
+            };
+            routines.Add(new Routine(typeof(string), "dfToCsvEx", toCsvExParams, "CSV-String mit override opts: dfToCsvEx(handle, sep, headerFlag, \"k=v;...\", quoteAllFlag 1/0)"));
 
             exportedRoutines = routines.AsReadOnly();
         }
@@ -178,12 +191,20 @@ namespace ScriptStack
                 {
                     case "dfLoadCsv":
                         return DfLoadCsv(parameters);
+                    case "dfReadCsv":
+                        return DfReadCsv(parameters);
 
                     case "dfSaveCsv":
                         {
-                            Console.WriteLine("Calling Save");
                             return DfSaveCsv(parameters);
                         }
+
+                    case "dfToCsv":
+                        return DfToCsv(parameters);
+
+                    case "dfToCsvEx":
+                        return DfToCsvEx(parameters);
+
                     case "dfHead":
                         return DfHead(parameters);
 
@@ -285,10 +306,43 @@ namespace ScriptStack
                 throw new ScriptStackException("CSV nicht gefunden: " + path);
 
             var df = Microsoft.Data.Analysis.DataFrame.LoadCsv(
-                path, 
-                separator: sep, 
-                header: header, 
+                path,
+                separator: sep,
+                header: header,
                 cultureInfo: CultureInfo.InvariantCulture // Wichtig wegen Tausendertrennzeichen
+            );
+
+            int handle = _nextHandle++;
+            _frames[handle] = df;
+            return handle;
+        }
+
+        private int DfReadCsv(List<object> p)
+        {
+            string csvText = (string)p[0];
+            string sepStr = (string)p[1];
+            int headerFlag = Convert.ToInt32(p[2], CultureInfo.InvariantCulture);
+
+            if (csvText == null) csvText = "";
+
+            // UTF-8 BOM entfernen!
+            if (csvText.Length > 0 && csvText[0] == '\uFEFF') csvText = csvText.Substring(1);
+
+            if (string.IsNullOrEmpty(sepStr)) sepStr = ",";
+            char sep = sepStr[0];
+            bool header = headerFlag != 0;
+
+            // String -> UTF8 Bytes -> Stream
+            byte[] bytes = Encoding.UTF8.GetBytes(csvText);
+
+            using var ms = new MemoryStream(bytes, writable: false);
+
+            // LoadCsv aus Stream
+            var df = Microsoft.Data.Analysis.DataFrame.LoadCsv(
+                ms,
+                separator: sep,
+                header: header,
+                cultureInfo: CultureInfo.InvariantCulture
             );
 
             int handle = _nextHandle++;
@@ -361,28 +415,94 @@ namespace ScriptStack
             return 1;
         }
 
-        private int DfSaveCsv2(List<object> p)
+        private string DfToCsv(List<object> p)
         {
-
-            Console.WriteLine("In DfSaveCsv");
             int handle = Convert.ToInt32(p[0], CultureInfo.InvariantCulture);
-            string path = (string)p[1];
-            string sepStr = (string)p[2];
-            int headerFlag = Convert.ToInt32(p[3], CultureInfo.InvariantCulture);
+            string sepStr = (string)p[1];
+            int headerFlag = Convert.ToInt32(p[2], CultureInfo.InvariantCulture);
+            int quoteAllFlag = Convert.ToInt32(p[3], CultureInfo.InvariantCulture); // FIX: immer vorhanden
 
             if (!_frames.TryGetValue(handle, out var df))
-                return -1;
-
-            Console.WriteLine("In DfSaveCsv 2");
+                return "";
 
             if (string.IsNullOrEmpty(sepStr)) sepStr = ",";
             char sep = sepStr[0];
             bool header = headerFlag != 0;
 
-            Console.WriteLine("In DfSaveCsv 3 " + df.ToString());
+            var fmt = GetFmtForHandle(handle).Clone();
+            fmt.QuoteAll = (quoteAllFlag != 0); // FIX: keine Optionalität
 
-            Microsoft.Data.Analysis.DataFrame.SaveCsv(df, path, separator: sep, header);
-            return 1;
+            var sb = new StringBuilder();
+
+            if (header)
+            {
+                for (int c = 0; c < df.Columns.Count; c++)
+                {
+                    if (c > 0) sb.Append(sep);
+                    sb.Append(CsvEscape(df.Columns[c].Name, sep, fmt.QuoteAll));
+                }
+                sb.AppendLine();
+            }
+
+            for (long r = 0; r < df.Rows.Count; r++)
+            {
+                for (int c = 0; c < df.Columns.Count; c++)
+                {
+                    if (c > 0) sb.Append(sep);
+                    string cell = FormatCell(df[r, c], fmt);
+                    sb.Append(CsvEscape(cell, sep, fmt.QuoteAll));
+                }
+                if (r < df.Rows.Count - 1) sb.AppendLine();
+            }
+
+            return sb.ToString();
+        }
+
+        private string DfToCsvEx(List<object> p)
+        {
+            int handle = Convert.ToInt32(p[0], CultureInfo.InvariantCulture);
+            string sepStr = (string)p[1];
+            int headerFlag = Convert.ToInt32(p[2], CultureInfo.InvariantCulture);
+            string overrideOptsStr = (string)p[3];
+            int quoteAllFlag = Convert.ToInt32(p[4], CultureInfo.InvariantCulture); // FIX: 5. Param
+
+            if (!_frames.TryGetValue(handle, out var df))
+                return "";
+
+            if (string.IsNullOrEmpty(sepStr)) sepStr = ",";
+            char sep = sepStr[0];
+            bool header = headerFlag != 0;
+
+            var baseFmt = GetFmtForHandle(handle);
+            var fmt = ParseCsvFmtOptions(overrideOptsStr, baseOpts: baseFmt);
+
+            // FIX: Flag soll eindeutig sein -> überschreibt opts
+            fmt.QuoteAll = (quoteAllFlag != 0);
+
+            var sb = new StringBuilder();
+
+            if (header)
+            {
+                for (int c = 0; c < df.Columns.Count; c++)
+                {
+                    if (c > 0) sb.Append(sep);
+                    sb.Append(CsvEscape(df.Columns[c].Name, sep, fmt.QuoteAll));
+                }
+                sb.AppendLine();
+            }
+
+            for (long r = 0; r < df.Rows.Count; r++)
+            {
+                for (int c = 0; c < df.Columns.Count; c++)
+                {
+                    if (c > 0) sb.Append(sep);
+                    string cell = FormatCell(df[r, c], fmt);
+                    sb.Append(CsvEscape(cell, sep, fmt.QuoteAll));
+                }
+                if (r < df.Rows.Count - 1) sb.AppendLine();
+            }
+
+            return sb.ToString();
         }
 
         private string DfHead(List<object> p)
