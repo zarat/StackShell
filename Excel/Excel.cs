@@ -1,6 +1,8 @@
+using ClosedXML.Excel;
+using DocumentFormat.OpenXml.Spreadsheet;
 using ScriptStack.Runtime;
 using System.Collections.ObjectModel;
-using ClosedXML.Excel;
+using System.Text;
 
 namespace Excel
 {
@@ -36,6 +38,13 @@ namespace Excel
             routines.Add(new Routine((Type)null, "xlsx_set_formula", cellParams));
             routines.Add(new Routine((Type)null, "xlsx_get", (Type)null, typeof(int), typeof(int)));
             routines.Add(new Routine((Type)null, "xlsx_get_formula", (Type)null, typeof(int), typeof(int)));
+
+            List<Type> csvParams = new List<Type>();
+            csvParams.Add((Type)null);        // sheet (IXLWorksheet)
+            csvParams.Add(typeof(string));    // separator, z.B. ";", ",", "\t"
+            csvParams.Add(typeof(bool));      // quoteFields (always quote)
+            routines.Add(new Routine((Type)null, "xlsx_tocsv", csvParams, "params: sheet, separator, quoteFields"));
+
             exportedRoutines = routines.AsReadOnly();
 
         }
@@ -177,9 +186,68 @@ namespace Excel
                 return sheet.ColumnsUsed().Count();
             }
 
+            if (routine == "xlsx_tocsv")
+            {
+                var sheet = parameters[0] as IXLWorksheet;
+                if (sheet == null) return "";
+
+                string sepStr = (parameters.Count > 1 && parameters[1] != null) ? (string)parameters[1] : ";";
+                char sep = string.IsNullOrEmpty(sepStr) ? ';' : sepStr[0];
+
+                bool alwaysQuote = (parameters.Count > 2 && parameters[2] != null) && (bool)parameters[2];
+
+                var range = sheet.RangeUsed();
+                if (range == null) return ""; // leeres Sheet
+
+                int firstRow = range.RangeAddress.FirstAddress.RowNumber;
+                int lastRow = range.RangeAddress.LastAddress.RowNumber;
+                int firstCol = range.RangeAddress.FirstAddress.ColumnNumber;
+                int lastCol = range.RangeAddress.LastAddress.ColumnNumber;
+
+                var sb = new StringBuilder();
+
+                for (int r = firstRow; r <= lastRow; r++)
+                {
+                    for (int c = firstCol; c <= lastCol; c++)
+                    {
+                        if (c > firstCol) sb.Append(sep);
+
+                        var cell = sheet.Cell(r, c);
+
+                        // GetFormattedString() entspricht eher dem, was Excel anzeigt (Zahlen/Datum-Format)
+                        string text = cell.IsEmpty() ? "" : cell.GetFormattedString();
+
+                        sb.Append(EscapeCsv(text, sep, alwaysQuote));
+                    }
+
+                    if (r < lastRow) sb.AppendLine();
+                }
+
+                return sb.ToString();
+            }
+
             return null;
 
         }
+
+        private static string EscapeCsv(string value, char sep, bool alwaysQuote)
+        {
+            value ??= "";
+
+            bool mustQuote =
+                alwaysQuote ||
+                value.IndexOf(sep) >= 0 ||
+                value.IndexOf('"') >= 0 ||
+                value.IndexOf('\r') >= 0 ||
+                value.IndexOf('\n') >= 0;
+
+            if (!mustQuote) return value;
+
+            // Quotes verdoppeln
+            value = value.Replace("\"", "\"\"");
+            return $"\"{value}\"";
+        }
+
     }
 
 }
