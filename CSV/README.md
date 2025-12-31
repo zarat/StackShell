@@ -36,7 +36,9 @@ function main() {
 	
 	var headers = csv_headers(csv);
 	print("Headers: " + csv_headers(csv));
-	
+
+	csv.set(csv, "0.HistoricalPrice", 111);
+
 	var it = csv_iter(csv);
 	while(csv_next(it)) { 
 	
