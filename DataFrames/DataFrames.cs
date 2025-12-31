@@ -4,10 +4,13 @@ using ScriptStack.Runtime;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Reflection.Metadata;
+using System.Reflection.Metadata.Ecma335;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -45,8 +48,8 @@ namespace ScriptStack
 
             // CSV I/O
             // dfLoadCsv(path, sep, headerFlag)
-            routines.Add(new Routine(typeof(int), "dfLoadCsv", typeof(string), typeof(string), typeof(int), "Lade CSV in DataFrame. sep z.B. \",\" oder \";\". headerFlag: 1/0. -> handle"));
-            routines.Add(new Routine(typeof(int), "dfReadCsv", typeof(string), typeof(string), typeof(int), "Lade CSV in DataFrame. sep z.B. \",\" oder \";\". headerFlag: 1/0. -> handle"));
+            routines.Add(new Routine(typeof(int), "df.LoadCsv", typeof(string), typeof(string), typeof(int), "Lade CSV in DataFrame. sep z.B. \",\" oder \";\". headerFlag: 1/0. -> handle"));
+            routines.Add(new Routine(typeof(int), "df.ReadCsv", typeof(string), typeof(string), typeof(int), "Lade CSV in DataFrame. sep z.B. \",\" oder \";\". headerFlag: 1/0. -> handle"));
 
             // dfSaveCsv(handle, path, sep, headerFlag)
             List<Type> saveCSVParams = new List<Type>();
@@ -54,24 +57,24 @@ namespace ScriptStack
             saveCSVParams.Add(typeof(string));
             saveCSVParams.Add(typeof(string));
             saveCSVParams.Add(typeof(int));
-            routines.Add(new Routine(typeof(int), "dfSaveCsv", saveCSVParams, "Speichere DataFrame als CSV. -> 1 ok, -1 Fehler"));
+            routines.Add(new Routine(typeof(int), "df.SaveCsv", saveCSVParams, "Speichere DataFrame als CSV. -> 1 ok, -1 Fehler"));
 
             // Display/Info
             // dfHead(handle, n)
-            routines.Add(new Routine(typeof(string), "dfHead", typeof(int), typeof(int), "Gibt die ersten n Zeilen als Texttabelle zurück."));
+            routines.Add(new Routine(typeof(string), "df.Head", typeof(int), typeof(int), "Gibt die ersten n Zeilen als Texttabelle zurück."));
 
             // dfInfo(handle)
-            routines.Add(new Routine(typeof(string), "dfInfo", typeof(int), "Gibt Shape + Spalten (Name/Typ/NullCount) zurück."));
+            routines.Add(new Routine(typeof(string), "df.Info", typeof(int), "Gibt Shape + Spalten (Name/Typ/NullCount) zurück."));
 
             // dfColumns(handle) -> ArrayList of strings
-            routines.Add(new Routine(typeof(ScriptStack.Runtime.ArrayList), "dfColumns", typeof(int), "Liste der Spaltennamen."));
+            routines.Add(new Routine(typeof(ScriptStack.Runtime.ArrayList), "df.Columns", typeof(int), "Liste der Spaltennamen."));
 
             // dfShape(handle) -> ArrayList [rows, cols]
-            routines.Add(new Routine(typeof(ScriptStack.Runtime.ArrayList), "dfShape", typeof(int), "Shape [rows, cols]."));
+            routines.Add(new Routine(typeof(ScriptStack.Runtime.ArrayList), "df.Shape", typeof(int), "Shape [rows, cols]."));
 
             // Cell get/set
             // dfGet(handle, rowIndex, col) col kann int (Index) oder string (Name) sein
-            routines.Add(new Routine((Type)null, "dfGet", typeof(int), typeof(int), (Type)null, "Hole Zellenwert: dfGet(handle, row, colIndex|colName)."));
+            routines.Add(new Routine((Type)null, "df.Get", typeof(int), typeof(int), (Type)null, "Hole Zellenwert: dfGet(handle, row, colIndex|colName)."));
 
             List<Type> dfSetParams = new List<Type>();
             dfSetParams.Add(typeof(int));
@@ -79,83 +82,85 @@ namespace ScriptStack
             dfSetParams.Add((Type)null);
             dfSetParams.Add((Type)null);
             // dfSet(handle, rowIndex, col, value) -> 1 ok, -1
-            routines.Add(new Routine(typeof(int), "dfSet", dfSetParams, "Setze Zellenwert: dfSet(handle, row, colIndex|colName, value)."));
+            routines.Add(new Routine(typeof(int), "df.Set", dfSetParams, "Setze Zellenwert: dfSet(handle, row, colIndex|colName, value)."));
 
             // Column as Array
             // dfCol(handle, col) -> ArrayList values
-            routines.Add(new Routine(typeof(ScriptStack.Runtime.ArrayList), "dfCol", typeof(int), (Type)null, "Hole eine Spalte als ArrayList: dfCol(handle, colIndex|colName)."));
+            routines.Add(new Routine(typeof(ScriptStack.Runtime.ArrayList), "df.Col", typeof(int), (Type)null, "Hole eine Spalte als ArrayList: dfCol(handle, colIndex|colName)."));
 
             // Close handle
-            routines.Add(new Routine(typeof(int), "dfClose", typeof(int), "Schließe DataFrame-Handle und gib Ressourcen frei."));
+            routines.Add(new Routine(typeof(int), "df.Close", typeof(int), "Schließe DataFrame-Handle und gib Ressourcen frei."));
 
 
             // Row as Array
-            routines.Add(new Routine(typeof(ScriptStack.Runtime.ArrayList), "dfRow", typeof(int), typeof(int), "Hole eine Zeile als ArrayList: dfRow(handle, rowIndex)."));
+            routines.Add(new Routine(typeof(ScriptStack.Runtime.ArrayList), "df.Row", typeof(int), typeof(int), "Hole eine Zeile als ArrayList: dfRow(handle, rowIndex)."));
 
             // Select columns -> new handle
-            routines.Add(new Routine(typeof(int), "dfSelect",
+            routines.Add(new Routine(typeof(int), "df.Select",
                 typeof(int), typeof(ScriptStack.Runtime.ArrayList),
                 "Wähle Spalten aus und erzeuge neuen DataFrame: dfSelect(handle, colsArray)."));
 
             // Filter eq -> new handle
             var filterParams = new List<Type> { typeof(int), (Type)null, (Type)null };
-            routines.Add(new Routine(typeof(int), "dfFilterEq",
+            routines.Add(new Routine(typeof(int), "df.FilterEq",
                 filterParams,
                 "Filtere Zeilen (col == value) und erzeuge neuen DataFrame: dfFilterEq(handle, colIndex|colName, value)."));
 
             // Describe -> string table
             var describeParams = new List<Type> { typeof(int), (Type)null };
-            routines.Add(new Routine(typeof(string), "dfDescribe",
+            routines.Add(new Routine(typeof(string), "df.Describe",
                 describeParams,
                 "Describe für numerische Spalten. dfDescribe(handle, colName|colIndex|\"\")"));
 
 
             // Filter >
             var filterGtParams = new List<Type> { typeof(int), (Type)null, (Type)null };
-            routines.Add(new Routine(typeof(int), "dfFilterGt", filterGtParams,
+            routines.Add(new Routine(typeof(int), "df.FilterGt", filterGtParams,
                 "Filter: col > value. dfFilterGt(handle, colIndex|colName, value) -> new handle"));
 
             // Filter <
             var filterLtParams = new List<Type> { typeof(int), (Type)null, (Type)null };
-            routines.Add(new Routine(typeof(int), "dfFilterLt", filterLtParams,
+            routines.Add(new Routine(typeof(int), "df.FilterLt", filterLtParams,
                 "Filter: col < value. dfFilterLt(handle, colIndex|colName, value) -> new handle"));
 
             // Sort
-            routines.Add(new Routine(typeof(int), "dfSort",
+            routines.Add(new Routine(typeof(int), "df.Sort",
                 typeof(int), (Type)null, typeof(int),
                 "Sortiere nach Spalte. dfSort(handle, colIndex|colName, ascFlag 1/0) -> new handle"));
 
             // ValueCounts
-            routines.Add(new Routine(typeof(int), "dfValueCounts",
+            routines.Add(new Routine(typeof(int), "df.ValueCounts",
                 typeof(int), (Type)null, typeof(int),
                 "ValueCounts. dfValueCounts(handle, colIndex|colName, ascFlag 1/0) -> new handle (Value,Count)"));
 
 
             // Filter >=
             var filterGeParams = new List<Type> { typeof(int), (Type)null, (Type)null };
-            routines.Add(new Routine(typeof(int), "dfFilterGE", filterGeParams,
+            routines.Add(new Routine(typeof(int), "df.FilterGE", filterGeParams,
                 "Filter: col >= value. dfFilterGE(handle, colIndex|colName, value) -> new handle"));
 
             // Filter <=
             var filterLeParams = new List<Type> { typeof(int), (Type)null, (Type)null };
-            routines.Add(new Routine(typeof(int), "dfFilterLE", filterLeParams,
+            routines.Add(new Routine(typeof(int), "df.FilterLE", filterLeParams,
                 "Filter: col <= value. dfFilterLE(handle, colIndex|colName, value) -> new handle"));
 
             // Multi-sort: colsArray + ascSpec (entweder int 1/0 für alle, oder ArrayList von 1/0)
             var sortByParams = new List<Type> { typeof(int), typeof(ScriptStack.Runtime.ArrayList), (Type)null };
-            routines.Add(new Routine(typeof(int), "dfSortBy", sortByParams,
+            routines.Add(new Routine(typeof(int), "df.SortBy", sortByParams,
                 "Multi-Sort: dfSortBy(handle, colsArray, ascSpec). ascSpec: 1/0 oder [1,0,1]. -> new handle"));
 
             var likeParams = new List<Type> { typeof(int), (Type)null, typeof(string), typeof(int) };
-            routines.Add(new Routine(typeof(int), "dfFilterLike", likeParams,
+            routines.Add(new Routine(typeof(int), "df.FilterLike", likeParams,
                 "Filter: LIKE pattern (% und _). dfFilterLike(handle, colIndex|colName, pattern, caseFlag 1/0) -> new handle"));
 
-            routines.Add(new Routine(typeof(ScriptStack.Runtime.ArrayList), "dfSelectLike", likeParams, "Select: Werte aus Spalte, die LIKE matchen. -> ArrayList"));
+            routines.Add(new Routine(typeof(ScriptStack.Runtime.ArrayList), "df.SelectLike", likeParams, "Select: Werte aus Spalte, die LIKE matchen. -> ArrayList"));
 
 
-            routines.Add(new Routine(typeof(int), "dfSetCsvFmt", typeof(int), typeof(string), "Set default CSV format options for handle. opts: \"k=v;k=v\""));
+            routines.Add(new Routine(typeof(int), "df.SetCsvFmt", typeof(int), typeof(string), "Set default CSV format options for handle. opts: \"k=v;k=v\""));
 
-            routines.Add(new Routine(typeof(int), "dfResetCsvFmt", typeof(int), "Reset CSV format options for handle (back to global defaults)."));
+            routines.Add(new Routine(typeof(int), "df.ResetCsvFmt", typeof(int), "Reset CSV format options for handle (back to global defaults)."));
+            routines.Add(new Routine((Type)null, "df.Ref", typeof(int), "Reference on the dataframe."));
+            routines.Add(new Routine((Type)null, "df.Unref", (Type)null, "Dereference on the dataframe."));
 
             List<Type> saveCSVExParams = new List<Type>();
             saveCSVExParams.Add(typeof(int));
@@ -163,10 +168,10 @@ namespace ScriptStack
             saveCSVExParams.Add(typeof(string));
             saveCSVExParams.Add(typeof(int));
             saveCSVExParams.Add(typeof(string));
-            routines.Add(new Routine(typeof(int), "dfSaveCsvEx", saveCSVExParams, "Save CSV with optional override opts: dfSaveCsvEx(handle,path,sep,header, \"k=v;...\")"));
+            routines.Add(new Routine(typeof(int), "df.SaveCsvEx", saveCSVExParams, "Save CSV with optional override opts: dfSaveCsvEx(handle,path,sep,header, \"k=v;...\")"));
 
             var toCsvParams = new List<Type> { typeof(int), typeof(string), typeof(int), typeof(int) };
-            routines.Add(new Routine(typeof(string), "dfToCsv", toCsvParams, "DataFrame -> CSV String. dfToCsv(handle, sep, headerFlag, quoteAllFlag 1/0)"));
+            routines.Add(new Routine(typeof(string), "df.ToCsv", toCsvParams, "DataFrame -> CSV String. dfToCsv(handle, sep, headerFlag, quoteAllFlag 1/0)"));
 
             var toCsvExParams = new List<Type>
             {
@@ -176,7 +181,7 @@ namespace ScriptStack
                 typeof(string),   // opts "k=v;..."
                 typeof(int)       // quoteAllFlag 1/0  (optional)
             };
-            routines.Add(new Routine(typeof(string), "dfToCsvEx", toCsvExParams, "CSV-String mit override opts: dfToCsvEx(handle, sep, headerFlag, \"k=v;...\", quoteAllFlag 1/0)"));
+            routines.Add(new Routine(typeof(string), "df.ToCsvEx", toCsvExParams, "CSV-String mit override opts: dfToCsvEx(handle, sep, headerFlag, \"k=v;...\", quoteAllFlag 1/0)"));
 
             exportedRoutines = routines.AsReadOnly();
         }
@@ -189,94 +194,115 @@ namespace ScriptStack
             {
                 switch (routine)
                 {
-                    case "dfLoadCsv":
+                    case "df.LoadCsv":
                         return DfLoadCsv(parameters);
-                    case "dfReadCsv":
+                    case "df.ReadCsv":
                         return DfReadCsv(parameters);
 
-                    case "dfSaveCsv":
+                    case "df.SaveCsv":
                         {
                             return DfSaveCsv(parameters);
                         }
 
-                    case "dfToCsv":
+                    case "df.ToCsv":
                         return DfToCsv(parameters);
 
-                    case "dfToCsvEx":
+                    case "df.ToCsvEx":
                         return DfToCsvEx(parameters);
 
-                    case "dfHead":
+                    case "df.Head":
                         return DfHead(parameters);
 
-                    case "dfInfo":
+                    case "df.Info":
                         return DfInfo(parameters);
 
-                    case "dfColumns":
+                    case "df.Columns":
                         return DfColumns(parameters);
 
-                    case "dfShape":
+                    case "df.Shape":
                         return DfShape(parameters);
 
-                    case "dfGet":
+                    case "df.Get":
                         return DfGet(parameters);
 
-                    case "dfSet":
+                    case "df.Set":
                         return DfSet(parameters);
 
-                    case "dfCol":
+                    case "df.Col":
                         return DfCol(parameters);
 
-                    case "dfClose":
+                    case "df.Close":
                         return DfClose(parameters);
 
-                    case "dfRow":
+                    case "df.Row":
                         return DfRow(parameters);
 
-                    case "dfSelect":
+                    case "df.Select":
                         return DfSelect(parameters);
 
-                    case "dfFilterEq":
+                    case "df.FilterEq":
                         return DfFilterEq(parameters);
 
-                    case "dfDescribe":
+                    case "df.Describe":
                         return DfDescribe(parameters);
 
-                    case "dfFilterGt":
+                    case "df.FilterGt":
                         return DfFilterGt(parameters);
 
-                    case "dfFilterLt":
+                    case "df.FilterLt":
                         return DfFilterLt(parameters);
 
-                    case "dfSort":
+                    case "df.Sort":
                         return DfSort(parameters);
 
-                    case "dfValueCounts":
+                    case "df.ValueCounts":
                         return DfValueCounts(parameters);
 
-                    case "dfFilterGE":
+                    case "df.FilterGE":
                         return DfFilterGE(parameters);
 
-                    case "dfFilterLE":
+                    case "df.FilterLE":
                         return DfFilterLE(parameters);
 
-                    case "dfSortBy":
+                    case "df.SortBy":
                         return DfSortBy(parameters);
 
-                    case "dfFilterLike":
+                    case "df.FilterLike":
                         return DfFilterLike(parameters);
 
-                    case "dfSelectLike":
+                    case "df.SelectLike":
                         return DfSelectLike(parameters);
 
-                    case "dfSetCsvFmt":
+                    case "df.SetCsvFmt":
                         return DfSetCsvFmt(parameters);
 
-                    case "dfResetCsvFmt":
+                    case "df.ResetCsvFmt":
                         return DfResetCsvFmt(parameters);
 
-                    case "dfSaveCsvEx":
+                    case "df.SaveCsvEx":
                         return DfSaveCsvEx(parameters);
 
+                    case "df.Ref":
+                        {
+                            if (!_frames.TryGetValue((int)parameters[0], out var df))
+                                return -1;
+                            return df;
+                        }
+                    case "df.Unref":
+                        {
+                            DataFrame df = (DataFrame)parameters[0];
+
+                            for(int i = 0; i < _frames.Count(); i++)
+                            {
+                                if (!_frames.TryGetValue(i, out var _df))
+                                    continue;
+                                if(object.ReferenceEquals(_df, df))
+                                {
+                                    return i;
+                                }
+                            }
+                            return null;
+                        }
                 }
 
                 return null;
@@ -587,10 +613,90 @@ namespace ScriptStack
             var df = GetDf(handle);
 
             int colIndex = ResolveColumnIndex(df, colSpec);
-            if (row < 0 || row >= df.Rows.Count) throw new ScriptStackException("row out of range");
+            if (row < 0 || row >= df.Rows.Count)
+                throw new ScriptStackException("row out of range");
 
-            df[row, colIndex] = value; // DataFrame indexer supports set
-            return 1;
+            var col = df.Columns[colIndex];
+            var targetType = col.DataType;
+
+            object coerced = CoerceForColumn(value, targetType);
+
+            try
+            {
+                // besser als df[row, colIndex] = ... (klarer & column-typed)
+                col[row] = coerced;
+                return 1;
+            }
+            catch (Exception ex)
+            {
+                throw new ScriptStackException(
+                    $"df.Set failed: col='{col.Name}' type='{targetType?.Name}', " +
+                    $"value='{value}' ({value?.GetType().Name ?? "null"}): {ex.Message}"
+                );
+            }
+        }
+
+        private static object CoerceForColumn(object value, Type targetType)
+        {
+            if (value == null) return null;
+            if (targetType == null) return value;
+
+            // Falls Nullable<T> irgendwo auftauchen sollte (zur Sicherheit)
+            targetType = Nullable.GetUnderlyingType(targetType) ?? targetType;
+
+            // Strings
+            if (targetType == typeof(string))
+                return value.ToString();
+
+            // Leere Strings -> null (praktisch bei CSV)
+            if (value is string s)
+            {
+                if (string.IsNullOrWhiteSpace(s)) return null;
+            }
+
+            // DateTime
+            if (targetType == typeof(DateTime))
+            {
+                if (value is DateTime dt) return dt;
+                if (value is string ds &&
+                    DateTime.TryParse(ds, CultureInfo.InvariantCulture,
+                        DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var parsed))
+                    return parsed;
+
+                // letzter Versuch
+                return Convert.ToDateTime(value, CultureInfo.InvariantCulture);
+            }
+
+            // Bool
+            if (targetType == typeof(bool))
+            {
+                if (value is bool b) return b;
+                if (value is string bs)
+                {
+                    if (bs == "1") return true;
+                    if (bs == "0") return false;
+                }
+                return Convert.ToBoolean(value, CultureInfo.InvariantCulture);
+            }
+
+            // Numerics/Enums/sonstiges (double -> long/int/etc.)
+            try
+            {
+                return Convert.ChangeType(value, targetType, CultureInfo.InvariantCulture);
+            }
+            catch
+            {
+                // Fallback: über String parsen (hilft bei exotischen Runtime-Number-Typen)
+                var vs = value.ToString() ?? "";
+                if (targetType == typeof(int)) return int.Parse(vs, CultureInfo.InvariantCulture);
+                if (targetType == typeof(long)) return long.Parse(vs, CultureInfo.InvariantCulture);
+                if (targetType == typeof(float)) return float.Parse(vs, CultureInfo.InvariantCulture);
+                if (targetType == typeof(double)) return double.Parse(vs, CultureInfo.InvariantCulture);
+                if (targetType == typeof(decimal)) return decimal.Parse(vs, CultureInfo.InvariantCulture);
+
+                // wenn alles scheitert: original werfen lassen
+                throw;
+            }
         }
 
         private ScriptStack.Runtime.ArrayList DfCol(List<object> p)
