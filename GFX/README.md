@@ -1,18 +1,3 @@
-Die ButtonsMask ist eine Bitmask "welche Buttons sind gerade gedrückt":
-- 1 = Left gedrückt
-- 2 = Right gedrückt
-- 4 = Middle gedrückt (Mausrad-Klick)
-- 8 = X1 gedrückt
-- 16 = X2 gedrückt
-Wenn man den MouseState z.B nutzt:
-```Javascript
-var s = Gfx_GetMouseState();
-if (s != null) {
-  var mask = s[2];
-  if ((mask & 4) != 0) println("middle down");
-}
-```
-
 ```Javascript
 var running;
 
@@ -67,3 +52,17 @@ function draw() {
 	
 }
 ```
+
+Die ButtonsMask beim MouseState ist eine Bitmask "welche Buttons sind gerade gedrückt":
+```Javascript
+var s = Gfx_GetMouseState();
+if (s != null) {
+  var mask = s[2];
+  if ((mask & 4) != 0) println("middle down");
+}
+```
+- 1 = Left gedrückt
+- 2 = Right gedrückt
+- 4 = Middle gedrückt (Mausrad-Klick)
+- 8 = X1 gedrückt
+- 16 = X2 gedrückt
