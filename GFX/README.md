@@ -297,6 +297,9 @@ function render() {
     Gfx_SetColour(0, 0, 0);
     Gfx_DrawString((W/2) - 40, 20, "" + scoreL + " : " + scoreR);
     Gfx_DrawString(20, H - 30, "W/S  |  Up/Down  |  ESC quit");
+
+	for(var i = 0; i < 1000; i++) {}
+
 }
 
 function main() {
