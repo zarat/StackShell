@@ -9,7 +9,7 @@ using System.Windows.Forms;
 
 namespace StackShell
 {
-    public class Gfx : Model
+    public class GFX : Model
     {
         #region Private Enumerations
 
@@ -35,6 +35,7 @@ namespace StackShell
                 : base()
             {
                 DoubleBuffered = true;
+                KeyPreview = true; // wichtig: Form bekommt Keys auch wenn Child-Control Fokus hat
             }
         }
 
@@ -46,6 +47,25 @@ namespace StackShell
             public int m_iValue2;
             public int m_iValue3;
             public string m_strValue4;
+        }
+
+        private class MouseEvt
+        {
+            public string Type;     // "down","up","move","click","dblclick","wheel"
+            public int X;
+            public int Y;
+            public int Button;      // 0..5
+            public int Clicks;
+            public int WheelDelta;  // per event
+            public int Modifiers;   // bitmask 1/2/4
+        }
+
+        private class KeyEvt
+        {
+            public string Type;    // "down","up","press"
+            public int KeyCode;    // int (Keys)
+            public string KeyChar; // "" wenn nicht vorhanden
+            public int Modifiers;  // bitmask 1/2/4
         }
 
         #endregion
@@ -74,9 +94,22 @@ namespace StackShell
         private Font m_font;
 
         // Flags für "Fenster wurde geschlossen"
-        private volatile bool _closeEventPending;   // wird gesetzt wenn irgendein Close passiert ist
-        private volatile bool _closedByUser;        // true wenn CloseReason.UserClosing
-        private volatile bool _everInitialised;     // hilft bei no-op Logik
+        private volatile bool _closeEventPending;
+        private volatile bool _closedByUser;
+        private volatile bool _everInitialised;
+
+        // Mouse/Key Events (Queues)
+        private const int MaxMouseEvents = 256;
+        private const int MaxKeyEvents = 256;
+        private readonly Queue<MouseEvt> _mouseQueue = new Queue<MouseEvt>();
+        private readonly Queue<KeyEvt> _keyQueue = new Queue<KeyEvt>();
+
+        // Mouse state
+        private int _mouseX;
+        private int _mouseY;
+        private int _mouseButtonsMask; // bitmask: 1 left,2 right,4 middle,8 x1,16 x2
+        private int _wheelAccum;
+        private int _lastModifiers;
 
         #endregion
 
@@ -110,6 +143,80 @@ namespace StackShell
             });
         }
 
+        private static int ModsFromKeys(Keys modifiers)
+        {
+            int m = 0;
+            if ((modifiers & Keys.Shift) != 0) m |= 1;
+            if ((modifiers & Keys.Control) != 0) m |= 2;
+            if ((modifiers & Keys.Alt) != 0) m |= 4;
+            return m;
+        }
+
+        private static int Btn(MouseButtons b) => b switch
+        {
+            MouseButtons.Left => 1,
+            MouseButtons.Right => 2,
+            MouseButtons.Middle => 3,
+            MouseButtons.XButton1 => 4,
+            MouseButtons.XButton2 => 5,
+            _ => 0
+        };
+
+        private static int BtnMask(MouseButtons b) => b switch
+        {
+            MouseButtons.Left => 1,
+            MouseButtons.Right => 2,
+            MouseButtons.Middle => 4,
+            MouseButtons.XButton1 => 8,
+            MouseButtons.XButton2 => 16,
+            _ => 0
+        };
+
+        private void EnqueueMouse(string type, int x, int y, MouseButtons button, int clicks, int wheelDelta, int modifiers)
+        {
+            lock (_sync)
+            {
+                // update state
+                _mouseX = x;
+                _mouseY = y;
+                _lastModifiers = modifiers;
+                if (wheelDelta != 0) _wheelAccum += wheelDelta;
+
+                if (_mouseQueue.Count >= MaxMouseEvents)
+                    _mouseQueue.Dequeue();
+
+                _mouseQueue.Enqueue(new MouseEvt
+                {
+                    Type = type,
+                    X = x,
+                    Y = y,
+                    Button = Btn(button),
+                    Clicks = clicks,
+                    WheelDelta = wheelDelta,
+                    Modifiers = modifiers
+                });
+            }
+        }
+
+        private void EnqueueKey(string type, int keyCode, string keyChar, int modifiers)
+        {
+            lock (_sync)
+            {
+                _lastModifiers = modifiers;
+
+                if (_keyQueue.Count >= MaxKeyEvents)
+                    _keyQueue.Dequeue();
+
+                _keyQueue.Enqueue(new KeyEvt
+                {
+                    Type = type,
+                    KeyCode = keyCode,
+                    KeyChar = keyChar ?? string.Empty,
+                    Modifiers = modifiers
+                });
+            }
+        }
+
         private bool StartUi(int width, int height)
         {
             if (!OperatingSystem.IsWindows())
@@ -126,6 +233,18 @@ namespace StackShell
             _closeEventPending = false;
             _closedByUser = false;
             _everInitialised = true;
+
+            // Reset input state
+            lock (_sync)
+            {
+                _mouseQueue.Clear();
+                _keyQueue.Clear();
+                _mouseX = 0;
+                _mouseY = 0;
+                _mouseButtonsMask = 0;
+                _wheelAccum = 0;
+                _lastModifiers = 0;
+            }
 
             _uiThread = new Thread(() =>
             {
@@ -155,10 +274,11 @@ namespace StackShell
                             _closeEventPending = true;
                         }
 
-                        // optional: liste leeren (thread-safe)
                         lock (_sync)
                         {
                             m_listDrawingInstructions.Clear();
+                            _mouseQueue.Clear();
+                            _keyQueue.Clear();
                         }
                     };
 
@@ -168,7 +288,66 @@ namespace StackShell
                         try { Application.ExitThread(); } catch { }
                     };
 
+                    // Zeichnen
                     form.Paint += OnPaint;
+
+                    // ---- Mouse events ----
+                    form.MouseDown += (_, e) =>
+                    {
+                        var mods = ModsFromKeys(Control.ModifierKeys);
+                        lock (_sync) { _mouseButtonsMask |= BtnMask(e.Button); }
+                        EnqueueMouse("down", e.X, e.Y, e.Button, e.Clicks, 0, mods);
+                    };
+
+                    form.MouseUp += (_, e) =>
+                    {
+                        var mods = ModsFromKeys(Control.ModifierKeys);
+                        lock (_sync) { _mouseButtonsMask &= ~BtnMask(e.Button); }
+                        EnqueueMouse("up", e.X, e.Y, e.Button, e.Clicks, 0, mods);
+                    };
+
+                    form.MouseMove += (_, e) =>
+                    {
+                        var mods = ModsFromKeys(Control.ModifierKeys);
+                        EnqueueMouse("move", e.X, e.Y, MouseButtons.None, 0, 0, mods);
+                    };
+
+                    form.MouseClick += (_, e) =>
+                    {
+                        var mods = ModsFromKeys(Control.ModifierKeys);
+                        EnqueueMouse("click", e.X, e.Y, e.Button, e.Clicks, 0, mods);
+                    };
+
+                    form.MouseDoubleClick += (_, e) =>
+                    {
+                        var mods = ModsFromKeys(Control.ModifierKeys);
+                        EnqueueMouse("dblclick", e.X, e.Y, e.Button, e.Clicks, 0, mods);
+                    };
+
+                    form.MouseWheel += (_, e) =>
+                    {
+                        var mods = ModsFromKeys(Control.ModifierKeys);
+                        EnqueueMouse("wheel", e.X, e.Y, MouseButtons.None, 0, e.Delta, mods);
+                    };
+
+                    // ---- Key events ----
+                    form.KeyDown += (_, e) =>
+                    {
+                        var mods = ModsFromKeys(e.Modifiers);
+                        EnqueueKey("down", (int)e.KeyCode, "", mods);
+                    };
+
+                    form.KeyUp += (_, e) =>
+                    {
+                        var mods = ModsFromKeys(e.Modifiers);
+                        EnqueueKey("up", (int)e.KeyCode, "", mods);
+                    };
+
+                    form.KeyPress += (_, e) =>
+                    {
+                        var mods = ModsFromKeys(Control.ModifierKeys);
+                        EnqueueKey("press", 0, e.KeyChar.ToString(), mods);
+                    };
 
                     // UI Ressourcen anlegen
                     m_pen = new Pen(Color.Black, 1.0f);
@@ -229,7 +408,6 @@ namespace StackShell
                 catch { }
             });
 
-            // nicht auf UI-Thread warten (Deadlock vermeiden)
             if (uiThread != null && Thread.CurrentThread != uiThread)
                 _uiExited.Wait();
         }
@@ -240,13 +418,15 @@ namespace StackShell
         private bool NoOpIfClosed()
         {
             if (IsUiAlive) return false;
-
-            // Wenn nie initialisiert wurde: echte “false” für misuse wäre ok,
-            // aber für deine Situation ist "no-op + true" stabiler.
-            if (_everInitialised)
-                return true;
-
+            if (_everInitialised) return true;
             return true;
+        }
+
+        private ScriptStack.Runtime.ArrayList MakeArrayList(params object[] items)
+        {
+            var al = new ScriptStack.Runtime.ArrayList();
+            foreach (var it in items) al.Add(it);
+            return al;
         }
 
         #endregion
@@ -328,12 +508,14 @@ namespace StackShell
 
         #region Public Methods
 
-        public Gfx()
+        public GFX()
         {
-            m_form = null;
-            m_listDrawingInstructions = new List<DrawingInstruction>();
+            
 
             if (s_listRoutines != null) return;
+
+            m_form = null;
+            m_listDrawingInstructions = new List<DrawingInstruction>();
 
             var listRoutines = new List<Routine>();
             Routine Routine = null;
@@ -375,12 +557,29 @@ namespace StackShell
             Routine = new Routine(typeBool, "Gfx_DrawString", typeInt, typeInt, typeof(string));
             listRoutines.Add(Routine);
 
-            // NEU: Fensterstatus abfragen
+            // Fensterstatus
             Routine = new Routine(typeBool, "Gfx_IsOpen");
             listRoutines.Add(Routine);
 
-            // NEU: erkennt X-Klick (einmalig, “consumable”)
+            // X-Klick erkennen
             Routine = new Routine(typeBool, "Gfx_PollUserClosed");
+            listRoutines.Add(Routine);
+
+            // Input polling (object/null)
+            Routine = new Routine((Type)null, "Gfx_PollMouse");
+            listRoutines.Add(Routine);
+
+            Routine = new Routine((Type)null, "Gfx_PollKey");
+            listRoutines.Add(Routine);
+
+            Routine = new Routine((Type)null, "Gfx_GetMouseState");
+            listRoutines.Add(Routine);
+
+            // UI setter
+            Routine = new Routine(typeBool, "Gfx_SetTitle", typeof(string));
+            listRoutines.Add(Routine);
+
+            Routine = new Routine(typeBool, "Gfx_SetSize", typeInt, typeInt);
             listRoutines.Add(Routine);
 
             s_listRoutines = listRoutines.AsReadOnly();
@@ -388,14 +587,12 @@ namespace StackShell
 
         public object Invoke(string strFunctionName, List<object> listParameters)
         {
+            // ---- Status / Close ----
             if (strFunctionName == "Gfx_IsOpen")
-            {
                 return IsUiAlive;
-            }
 
             if (strFunctionName == "Gfx_PollUserClosed")
             {
-                // true genau einmal liefern, dann zurücksetzen
                 if (_closeEventPending && _closedByUser)
                 {
                     _closeEventPending = false;
@@ -405,6 +602,89 @@ namespace StackShell
                 return false;
             }
 
+            // ---- Mouse polling ----
+            if (strFunctionName == "Gfx_PollMouse")
+            {
+                MouseEvt evt = null;
+                lock (_sync)
+                {
+                    if (_mouseQueue.Count > 0)
+                        evt = _mouseQueue.Dequeue();
+                }
+
+                if (evt == null) return null;
+
+                // [type, x, y, button, clicks, wheelDelta, modifiers]
+                return MakeArrayList(evt.Type, evt.X, evt.Y, evt.Button, evt.Clicks, evt.WheelDelta, evt.Modifiers);
+            }
+
+            // ---- Key polling ----
+            if (strFunctionName == "Gfx_PollKey")
+            {
+                KeyEvt evt = null;
+                lock (_sync)
+                {
+                    if (_keyQueue.Count > 0)
+                        evt = _keyQueue.Dequeue();
+                }
+
+                if (evt == null) return null;
+
+                // [type, keyCode, keyChar, modifiers]
+                return MakeArrayList(evt.Type, evt.KeyCode, evt.KeyChar ?? "", evt.Modifiers);
+            }
+
+            // ---- Mouse state ----
+            if (strFunctionName == "Gfx_GetMouseState")
+            {
+                if (!IsUiAlive) return null;
+
+                int x, y, mask, wheel, mods;
+                lock (_sync)
+                {
+                    x = _mouseX;
+                    y = _mouseY;
+                    mask = _mouseButtonsMask;
+                    wheel = _wheelAccum;
+                    mods = _lastModifiers;
+                }
+
+                // [x, y, buttonsMask, wheelAccum, modifiers]
+                return MakeArrayList(x, y, mask, wheel, mods);
+            }
+
+            // ---- UI setter ----
+            if (strFunctionName == "Gfx_SetTitle")
+            {
+                if (NoOpIfClosed()) return true;
+
+                var title = (string)listParameters[0];
+                RunOnUi(() =>
+                {
+                    if (m_form != null && !m_form.IsDisposed)
+                        m_form.Text = title ?? "Gfx";
+                });
+                return true;
+            }
+
+            if (strFunctionName == "Gfx_SetSize")
+            {
+                if (NoOpIfClosed()) return true;
+
+                int w = (int)listParameters[0];
+                int h = (int)listParameters[1];
+                if (w < 16 || h < 16) return false;
+
+                RunOnUi(() =>
+                {
+                    if (m_form != null && !m_form.IsDisposed)
+                        m_form.ClientSize = new Size(w, h);
+                });
+                InvalidateUi();
+                return true;
+            }
+
+            // ---- Lifecycle ----
             if (strFunctionName == "Gfx_Initialise")
             {
                 if (IsUiAlive) return false;
@@ -430,11 +710,15 @@ namespace StackShell
                 lock (_sync)
                 {
                     m_listDrawingInstructions.Clear();
+                    _mouseQueue.Clear();
+                    _keyQueue.Clear();
                 }
 
                 StopUi();
                 return true;
             }
+
+            // ---- Drawing / Commands ----
             else if (strFunctionName == "Gfx_Clear")
             {
                 if (NoOpIfClosed()) return true;
