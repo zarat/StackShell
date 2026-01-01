@@ -30,7 +30,6 @@ function setupUi() {
 
     lstItems = ui.CreateControl("listbox", 0, 12, 76, 610, 300, "");
 
-    // Optional: Farben
     // ui.SetBackColor(lstItems, 250, 250, 250);
 }
 
@@ -41,9 +40,6 @@ function addCurrentText() {
     if (s == "") return;
 
     if (ui.GetChecked(chkUpper)) {
-        // ScriptStack hat meistens String-Methods nicht — wenn du keine hast:
-        // einfach weglassen oder im Plugin eine ui.ToUpper routine anbieten.
-        // Hier "Pseudo": 
         s = s.toUpper();
     }
 
@@ -125,14 +121,10 @@ function main() {
     if (!running) return;
 
     while (running) {
-        // optional: genau wie bei Gfx
         if (ui.PollUserClosed()) break;
         if (!ui.IsOpen()) break;
 
         handleEvents();
-
-        // keine Render-Schleife nötig – WinForms rendert selbst
-        // aber yield brauchst du, damit dein Script nicht blockt
         yield;
     }
 
