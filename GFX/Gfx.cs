@@ -1,14 +1,13 @@
+using ScriptStack.Compiler;
+using ScriptStack.Runtime;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.Text;
 using System.Drawing;
+using System.Threading;
 using System.Windows.Forms;
 
-using ScriptStack.Compiler;
-using ScriptStack.Runtime;
-
-namespace Conscript
+namespace StackShell
 {
     public class Gfx : Model
     {
@@ -46,7 +45,7 @@ namespace Conscript
             public int m_iValue1;
             public int m_iValue2;
             public int m_iValue3;
-            public String m_strValue4;
+            public string m_strValue4;
         }
 
         #endregion
@@ -59,11 +58,196 @@ namespace Conscript
 
         #region Private Variables
 
-        private Form m_form;
+        private readonly object _sync = new object();
+
+        private GraphicsForm m_form;
+        private Thread _uiThread;
+        private readonly ManualResetEventSlim _uiReady = new ManualResetEventSlim(false);
+        private readonly ManualResetEventSlim _uiExited = new ManualResetEventSlim(false);
+        private Exception _uiStartError;
+
         private List<DrawingInstruction> m_listDrawingInstructions;
+
+        // UI resources (nur im UI-Thread benutzen/entsorgen)
         private Pen m_pen;
-        private Brush m_brush;
+        private SolidBrush m_brush;
         private Font m_font;
+
+        // Flags für "Fenster wurde geschlossen"
+        private volatile bool _closeEventPending;   // wird gesetzt wenn irgendein Close passiert ist
+        private volatile bool _closedByUser;        // true wenn CloseReason.UserClosing
+        private volatile bool _everInitialised;     // hilft bei no-op Logik
+
+        #endregion
+
+        #region Private Helpers
+
+        private bool IsUiAlive =>
+            m_form != null && !m_form.IsDisposed && _uiThread != null && _uiThread.IsAlive;
+
+        private void RunOnUi(Action action)
+        {
+            var form = m_form;
+            if (form == null || form.IsDisposed) return;
+
+            try
+            {
+                if (form.InvokeRequired) form.BeginInvoke(action);
+                else action();
+            }
+            catch
+            {
+                // UI schließt vielleicht gerade – ignorieren
+            }
+        }
+
+        private void InvalidateUi()
+        {
+            RunOnUi(() =>
+            {
+                if (m_form != null && !m_form.IsDisposed)
+                    m_form.Invalidate();
+            });
+        }
+
+        private bool StartUi(int width, int height)
+        {
+            if (!OperatingSystem.IsWindows())
+                return false;
+
+            if (IsUiAlive)
+                return false;
+
+            _uiStartError = null;
+            _uiReady.Reset();
+            _uiExited.Reset();
+
+            // Reset close flags beim (Neu)Start
+            _closeEventPending = false;
+            _closedByUser = false;
+            _everInitialised = true;
+
+            _uiThread = new Thread(() =>
+            {
+                try
+                {
+                    Application.SetHighDpiMode(HighDpiMode.SystemAware);
+                    Application.EnableVisualStyles();
+                    Application.SetCompatibleTextRenderingDefault(false);
+
+                    var form = new GraphicsForm
+                    {
+                        Text = "Gfx",
+                        StartPosition = FormStartPosition.CenterScreen,
+                        ClientSize = new Size(width, height)
+                    };
+
+                    // WICHTIG: User-X erkennen
+                    form.FormClosing += (_, e) =>
+                    {
+                        if (e.CloseReason == CloseReason.UserClosing)
+                        {
+                            _closedByUser = true;
+                            _closeEventPending = true;
+                        }
+                        else
+                        {
+                            _closeEventPending = true;
+                        }
+
+                        // optional: liste leeren (thread-safe)
+                        lock (_sync)
+                        {
+                            m_listDrawingInstructions.Clear();
+                        }
+                    };
+
+                    // Message-Loop definitiv beenden
+                    form.FormClosed += (_, __) =>
+                    {
+                        try { Application.ExitThread(); } catch { }
+                    };
+
+                    form.Paint += OnPaint;
+
+                    // UI Ressourcen anlegen
+                    m_pen = new Pen(Color.Black, 1.0f);
+                    m_brush = new SolidBrush(Color.Black);
+                    m_font = new Font(FontFamily.GenericSansSerif, 10.0f);
+
+                    m_form = form;
+
+                    _uiReady.Set();
+
+                    // BLOCKT bis Form geschlossen wird
+                    Application.Run(form);
+                }
+                catch (Exception ex)
+                {
+                    _uiStartError = ex;
+                    _uiReady.Set();
+                }
+                finally
+                {
+                    try { m_pen?.Dispose(); } catch { }
+                    try { m_brush?.Dispose(); } catch { }
+                    try { m_font?.Dispose(); } catch { }
+
+                    m_pen = null;
+                    m_brush = null;
+                    m_font = null;
+
+                    m_form = null;
+                    _uiExited.Set();
+                }
+            });
+
+            _uiThread.IsBackground = true;
+            _uiThread.SetApartmentState(ApartmentState.STA);
+            _uiThread.Start();
+
+            _uiReady.Wait();
+
+            return _uiStartError == null && m_form != null;
+        }
+
+        private void StopUi()
+        {
+            var uiThread = _uiThread;
+            var form = m_form;
+
+            if (form == null)
+                return;
+
+            RunOnUi(() =>
+            {
+                try
+                {
+                    if (!form.IsDisposed)
+                        form.Close();
+                }
+                catch { }
+            });
+
+            // nicht auf UI-Thread warten (Deadlock vermeiden)
+            if (uiThread != null && Thread.CurrentThread != uiThread)
+                _uiExited.Wait();
+        }
+
+        /// <summary>
+        /// Wenn UI weg ist: no-op + true zurückgeben (damit Scripts nicht “hängen” bleiben).
+        /// </summary>
+        private bool NoOpIfClosed()
+        {
+            if (IsUiAlive) return false;
+
+            // Wenn nie initialisiert wurde: echte “false” für misuse wäre ok,
+            // aber für deine Situation ist "no-op + true" stabiler.
+            if (_everInitialised)
+                return true;
+
+            return true;
+        }
 
         #endregion
 
@@ -72,52 +256,68 @@ namespace Conscript
         private void OnPaint(object objectSender, PaintEventArgs paintEventArgs)
         {
             Graphics graphics = paintEventArgs.Graphics;
-            graphics.SmoothingMode
-                = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
+            graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
 
-            foreach (DrawingInstruction drawingInstruction
-                in m_listDrawingInstructions)
+            DrawingInstruction[] snapshot;
+            lock (_sync)
+            {
+                snapshot = m_listDrawingInstructions.ToArray();
+            }
+
+            if (m_pen == null || m_brush == null || m_font == null)
+                return;
+
+            foreach (var drawingInstruction in snapshot)
             {
                 switch (drawingInstruction.m_drawingPrimitive)
                 {
                     case DrawingPrimitive.Colour:
-                        Color color = Color.FromArgb(
-                            drawingInstruction.m_iValue0,
-                            drawingInstruction.m_iValue1,
-                            drawingInstruction.m_iValue2);
-                        m_pen.Color = color;
-                        m_brush = new SolidBrush(color);
-                        break;
+                        {
+                            Color color = Color.FromArgb(
+                                drawingInstruction.m_iValue0,
+                                drawingInstruction.m_iValue1,
+                                drawingInstruction.m_iValue2);
+
+                            m_pen.Color = color;
+                            m_brush.Color = color; // kein Leak
+                            break;
+                        }
                     case DrawingPrimitive.LineWidth:
-                        m_pen.Width = drawingInstruction.m_iValue0;
+                        m_pen.Width = Math.Max(1, drawingInstruction.m_iValue0);
                         break;
+
                     case DrawingPrimitive.Line:
                         graphics.DrawLine(m_pen,
                             drawingInstruction.m_iValue0, drawingInstruction.m_iValue1,
                             drawingInstruction.m_iValue2, drawingInstruction.m_iValue3);
                         break;
+
                     case DrawingPrimitive.DrawRectangle:
                         graphics.DrawRectangle(m_pen,
                             drawingInstruction.m_iValue0, drawingInstruction.m_iValue1,
                             drawingInstruction.m_iValue2, drawingInstruction.m_iValue3);
                         break;
+
                     case DrawingPrimitive.FillRectangle:
                         graphics.FillRectangle(m_brush,
                             drawingInstruction.m_iValue0, drawingInstruction.m_iValue1,
                             drawingInstruction.m_iValue2, drawingInstruction.m_iValue3);
                         break;
+
                     case DrawingPrimitive.DrawEllipse:
                         graphics.DrawEllipse(m_pen,
                             drawingInstruction.m_iValue0, drawingInstruction.m_iValue1,
                             drawingInstruction.m_iValue2, drawingInstruction.m_iValue3);
                         break;
+
                     case DrawingPrimitive.FillEllipse:
                         graphics.FillEllipse(m_brush,
                             drawingInstruction.m_iValue0, drawingInstruction.m_iValue1,
                             drawingInstruction.m_iValue2, drawingInstruction.m_iValue3);
                         break;
+
                     case DrawingPrimitive.DrawString:
-                        graphics.DrawString(drawingInstruction.m_strValue4, m_font, m_brush,
+                        graphics.DrawString(drawingInstruction.m_strValue4 ?? string.Empty, m_font, m_brush,
                             drawingInstruction.m_iValue0, drawingInstruction.m_iValue1);
                         break;
                 }
@@ -135,190 +335,282 @@ namespace Conscript
 
             if (s_listRoutines != null) return;
 
-            List<Routine> listRoutines
-                = new List<Routine>();
-            Routine Routine
-                = null;
+            var listRoutines = new List<Routine>();
+            Routine Routine = null;
+
             Type typeBool = typeof(bool);
             Type typeInt = typeof(int);
-            List<Type> listFourInts = new List<Type>();
-            listFourInts.Add(typeInt);
-            listFourInts.Add(typeInt);
-            listFourInts.Add(typeInt);
-            listFourInts.Add(typeInt);
+            List<Type> listFourInts = new List<Type> { typeInt, typeInt, typeInt, typeInt };
 
             Routine = new Routine(typeBool, "Gfx_Initialise", typeInt, typeInt);
             listRoutines.Add(Routine);
+
             Routine = new Routine(typeBool, "Gfx_Shutdown");
             listRoutines.Add(Routine);
+
             Routine = new Routine(typeBool, "Gfx_Clear");
             listRoutines.Add(Routine);
+
             Routine = new Routine(typeBool, "Gfx_SetColour", typeInt, typeInt, typeInt);
             listRoutines.Add(Routine);
+
             Routine = new Routine(typeBool, "Gfx_SetLineWidth", typeInt);
             listRoutines.Add(Routine);
+
             Routine = new Routine(typeBool, "Gfx_DrawLine", listFourInts);
             listRoutines.Add(Routine);
+
             Routine = new Routine(typeBool, "Gfx_DrawRectangle", listFourInts);
             listRoutines.Add(Routine);
+
             Routine = new Routine(typeBool, "Gfx_FillRectangle", listFourInts);
             listRoutines.Add(Routine);
+
             Routine = new Routine(typeBool, "Gfx_DrawEllipse", listFourInts);
             listRoutines.Add(Routine);
+
             Routine = new Routine(typeBool, "Gfx_FillEllipse", listFourInts);
             listRoutines.Add(Routine);
-            Routine = new Routine(typeBool, "Gfx_DrawString", typeInt, typeInt, typeof(String));
+
+            Routine = new Routine(typeBool, "Gfx_DrawString", typeInt, typeInt, typeof(string));
+            listRoutines.Add(Routine);
+
+            // NEU: Fensterstatus abfragen
+            Routine = new Routine(typeBool, "Gfx_IsOpen");
+            listRoutines.Add(Routine);
+
+            // NEU: erkennt X-Klick (einmalig, “consumable”)
+            Routine = new Routine(typeBool, "Gfx_PollUserClosed");
             listRoutines.Add(Routine);
 
             s_listRoutines = listRoutines.AsReadOnly();
         }
 
-        public object Invoke(String strFunctionName, List<object> listParameters)
+        public object Invoke(string strFunctionName, List<object> listParameters)
         {
+            if (strFunctionName == "Gfx_IsOpen")
+            {
+                return IsUiAlive;
+            }
+
+            if (strFunctionName == "Gfx_PollUserClosed")
+            {
+                // true genau einmal liefern, dann zurücksetzen
+                if (_closeEventPending && _closedByUser)
+                {
+                    _closeEventPending = false;
+                    _closedByUser = false;
+                    return true;
+                }
+                return false;
+            }
+
             if (strFunctionName == "Gfx_Initialise")
             {
-                if (m_form != null) return false;
+                if (IsUiAlive) return false;
+
                 int iWidth = (int)listParameters[0];
                 int iHeight = (int)listParameters[1];
                 if (iWidth < 16) return false;
                 if (iHeight < 16) return false;
-                m_form = new GraphicsForm();
-                m_form.Width = iWidth;
-                m_form.Height = iHeight;
-                m_form.Paint += new PaintEventHandler(OnPaint);
-                m_form.Show();
-                m_listDrawingInstructions.Clear();
-                m_pen = new Pen(Color.Black);
-                m_brush = new SolidBrush(Color.Black);
-                m_font = new Font(FontFamily.GenericSansSerif, 10.0f);
-                m_form.Invalidate();
+
+                lock (_sync)
+                {
+                    m_listDrawingInstructions.Clear();
+                }
+
+                bool ok = StartUi(iWidth, iHeight);
+                if (!ok) return false;
+
+                InvalidateUi();
                 return true;
             }
             else if (strFunctionName == "Gfx_Shutdown")
             {
-                if (m_form == null) return true;
-                m_form.Close();
-                m_listDrawingInstructions.Clear();
-                m_form.Invalidate();
-                m_form = null;
+                lock (_sync)
+                {
+                    m_listDrawingInstructions.Clear();
+                }
+
+                StopUi();
                 return true;
             }
             else if (strFunctionName == "Gfx_Clear")
             {
-                if (m_form == null) return false;
-                m_listDrawingInstructions.Clear();
-                m_form.Invalidate();
+                if (NoOpIfClosed()) return true;
+
+                lock (_sync)
+                {
+                    m_listDrawingInstructions.Clear();
+                }
+
+                InvalidateUi();
                 return true;
             }
             else if (strFunctionName == "Gfx_SetColour")
             {
-                if (m_form == null) return false;
+                if (NoOpIfClosed()) return true;
 
-                DrawingInstruction drawingInstruction
-                    = new DrawingInstruction();
-                drawingInstruction.m_drawingPrimitive = DrawingPrimitive.Colour;
-                drawingInstruction.m_iValue0 = (int)listParameters[0];
-                drawingInstruction.m_iValue1 = (int)listParameters[1];
-                drawingInstruction.m_iValue2 = (int)listParameters[2];
-                m_listDrawingInstructions.Add(drawingInstruction);
-                m_form.Invalidate();
+                var drawingInstruction = new DrawingInstruction
+                {
+                    m_drawingPrimitive = DrawingPrimitive.Colour,
+                    m_iValue0 = (int)listParameters[0],
+                    m_iValue1 = (int)listParameters[1],
+                    m_iValue2 = (int)listParameters[2]
+                };
+
+                lock (_sync)
+                {
+                    m_listDrawingInstructions.Add(drawingInstruction);
+                }
+
+                InvalidateUi();
                 return true;
             }
             else if (strFunctionName == "Gfx_SetLineWidth")
             {
-                if (m_form == null) return false;
+                if (NoOpIfClosed()) return true;
 
-                DrawingInstruction drawingInstruction
-                    = new DrawingInstruction();
-                drawingInstruction.m_drawingPrimitive = DrawingPrimitive.LineWidth;
-                drawingInstruction.m_iValue0 = (int)listParameters[0];
-                m_listDrawingInstructions.Add(drawingInstruction);
-                m_form.Invalidate();
+                var drawingInstruction = new DrawingInstruction
+                {
+                    m_drawingPrimitive = DrawingPrimitive.LineWidth,
+                    m_iValue0 = (int)listParameters[0]
+                };
+
+                lock (_sync)
+                {
+                    m_listDrawingInstructions.Add(drawingInstruction);
+                }
+
+                InvalidateUi();
                 return true;
             }
             else if (strFunctionName == "Gfx_DrawLine")
             {
-                if (m_form == null) return false;
-                DrawingInstruction drawingInstruction
-                    = new DrawingInstruction();
-                drawingInstruction.m_drawingPrimitive = DrawingPrimitive.Line;
-                drawingInstruction.m_iValue0 = (int)listParameters[0];
-                drawingInstruction.m_iValue1 = (int)listParameters[1];
-                drawingInstruction.m_iValue2 = (int)listParameters[2];
-                drawingInstruction.m_iValue3 = (int)listParameters[3];
-                m_listDrawingInstructions.Add(drawingInstruction);
-                m_form.Invalidate();
+                if (NoOpIfClosed()) return true;
+
+                var drawingInstruction = new DrawingInstruction
+                {
+                    m_drawingPrimitive = DrawingPrimitive.Line,
+                    m_iValue0 = (int)listParameters[0],
+                    m_iValue1 = (int)listParameters[1],
+                    m_iValue2 = (int)listParameters[2],
+                    m_iValue3 = (int)listParameters[3]
+                };
+
+                lock (_sync)
+                {
+                    m_listDrawingInstructions.Add(drawingInstruction);
+                }
+
+                InvalidateUi();
                 return true;
             }
             else if (strFunctionName == "Gfx_DrawRectangle")
             {
-                if (m_form == null) return false;
-                DrawingInstruction drawingInstruction
-                    = new DrawingInstruction();
-                drawingInstruction.m_drawingPrimitive = DrawingPrimitive.DrawRectangle;
-                drawingInstruction.m_iValue0 = (int)listParameters[0];
-                drawingInstruction.m_iValue1 = (int)listParameters[1];
-                drawingInstruction.m_iValue2 = (int)listParameters[2];
-                drawingInstruction.m_iValue3 = (int)listParameters[3];
-                m_listDrawingInstructions.Add(drawingInstruction);
-                m_form.Invalidate();
+                if (NoOpIfClosed()) return true;
+
+                var drawingInstruction = new DrawingInstruction
+                {
+                    m_drawingPrimitive = DrawingPrimitive.DrawRectangle,
+                    m_iValue0 = (int)listParameters[0],
+                    m_iValue1 = (int)listParameters[1],
+                    m_iValue2 = (int)listParameters[2],
+                    m_iValue3 = (int)listParameters[3]
+                };
+
+                lock (_sync)
+                {
+                    m_listDrawingInstructions.Add(drawingInstruction);
+                }
+
+                InvalidateUi();
                 return true;
             }
             else if (strFunctionName == "Gfx_FillRectangle")
             {
-                if (m_form == null) return false;
-                DrawingInstruction drawingInstruction
-                    = new DrawingInstruction();
-                drawingInstruction.m_drawingPrimitive = DrawingPrimitive.FillRectangle;
-                drawingInstruction.m_iValue0 = (int)listParameters[0];
-                drawingInstruction.m_iValue1 = (int)listParameters[1];
-                drawingInstruction.m_iValue2 = (int)listParameters[2];
-                drawingInstruction.m_iValue3 = (int)listParameters[3];
-                m_listDrawingInstructions.Add(drawingInstruction);
-                m_form.Invalidate();
+                if (NoOpIfClosed()) return true;
+
+                var drawingInstruction = new DrawingInstruction
+                {
+                    m_drawingPrimitive = DrawingPrimitive.FillRectangle,
+                    m_iValue0 = (int)listParameters[0],
+                    m_iValue1 = (int)listParameters[1],
+                    m_iValue2 = (int)listParameters[2],
+                    m_iValue3 = (int)listParameters[3]
+                };
+
+                lock (_sync)
+                {
+                    m_listDrawingInstructions.Add(drawingInstruction);
+                }
+
+                InvalidateUi();
                 return true;
             }
             else if (strFunctionName == "Gfx_DrawEllipse")
             {
-                if (m_form == null) return false;
-                DrawingInstruction drawingInstruction
-                    = new DrawingInstruction();
-                drawingInstruction.m_drawingPrimitive = DrawingPrimitive.DrawEllipse;
-                drawingInstruction.m_iValue0 = (int)listParameters[0];
-                drawingInstruction.m_iValue1 = (int)listParameters[1];
-                drawingInstruction.m_iValue2 = (int)listParameters[2];
-                drawingInstruction.m_iValue3 = (int)listParameters[3];
-                m_listDrawingInstructions.Add(drawingInstruction);
-                m_form.Invalidate();
+                if (NoOpIfClosed()) return true;
+
+                var drawingInstruction = new DrawingInstruction
+                {
+                    m_drawingPrimitive = DrawingPrimitive.DrawEllipse,
+                    m_iValue0 = (int)listParameters[0],
+                    m_iValue1 = (int)listParameters[1],
+                    m_iValue2 = (int)listParameters[2],
+                    m_iValue3 = (int)listParameters[3]
+                };
+
+                lock (_sync)
+                {
+                    m_listDrawingInstructions.Add(drawingInstruction);
+                }
+
+                InvalidateUi();
                 return true;
             }
             else if (strFunctionName == "Gfx_FillEllipse")
             {
-                if (m_form == null) return false;
-                DrawingInstruction drawingInstruction
-                    = new DrawingInstruction();
-                drawingInstruction.m_drawingPrimitive = DrawingPrimitive.FillEllipse;
-                drawingInstruction.m_iValue0 = (int)listParameters[0];
-                drawingInstruction.m_iValue1 = (int)listParameters[1];
-                drawingInstruction.m_iValue2 = (int)listParameters[2];
-                drawingInstruction.m_iValue3 = (int)listParameters[3];
-                m_listDrawingInstructions.Add(drawingInstruction);
-                m_form.Invalidate();
+                if (NoOpIfClosed()) return true;
+
+                var drawingInstruction = new DrawingInstruction
+                {
+                    m_drawingPrimitive = DrawingPrimitive.FillEllipse,
+                    m_iValue0 = (int)listParameters[0],
+                    m_iValue1 = (int)listParameters[1],
+                    m_iValue2 = (int)listParameters[2],
+                    m_iValue3 = (int)listParameters[3]
+                };
+
+                lock (_sync)
+                {
+                    m_listDrawingInstructions.Add(drawingInstruction);
+                }
+
+                InvalidateUi();
                 return true;
             }
             else if (strFunctionName == "Gfx_DrawString")
             {
-                if (m_form == null) return false;
-                DrawingInstruction drawingInstruction
-                    = new DrawingInstruction();
-                drawingInstruction.m_drawingPrimitive = DrawingPrimitive.DrawString;
-                drawingInstruction.m_iValue0 = (int)listParameters[0];
-                drawingInstruction.m_iValue1 = (int)listParameters[1];
-                drawingInstruction.m_strValue4 = (String)listParameters[2];
-                m_listDrawingInstructions.Add(drawingInstruction);
-                m_form.Invalidate();
+                if (NoOpIfClosed()) return true;
+
+                var drawingInstruction = new DrawingInstruction
+                {
+                    m_drawingPrimitive = DrawingPrimitive.DrawString,
+                    m_iValue0 = (int)listParameters[0],
+                    m_iValue1 = (int)listParameters[1],
+                    m_strValue4 = (string)listParameters[2]
+                };
+
+                lock (_sync)
+                {
+                    m_listDrawingInstructions.Add(drawingInstruction);
+                }
+
+                InvalidateUi();
                 return true;
             }
+
             return false;
         }
 
@@ -326,13 +618,7 @@ namespace Conscript
 
         #region Public Properties
 
-        public ReadOnlyCollection<Routine> Routines
-        {
-            get
-            {
-                return s_listRoutines;
-            }
-        }
+        public ReadOnlyCollection<Routine> Routines => s_listRoutines;
 
         #endregion
     }
