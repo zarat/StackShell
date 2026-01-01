@@ -12,6 +12,33 @@ function main() {
 		if (Gfx_PollUserClosed())
             return;
 		
+		var k = Gfx_PollKey();
+		if(k != null) {
+			// [type,keyCode,keyChar,modifiers]
+			println("key=" + k[0] + " code=" + k[1] + " char=" + k[2]);
+		}
+		
+		var m = Gfx_PollMouse();
+		if (m != null) {
+			if(m[0] == "wheel") 
+			{
+				var d = m[5];
+				if (d > 0) println("scroll up " + d);
+				else if (d < 0) println("scroll down " + d);
+			}
+			else 
+			{
+				// [type,x,y,button,clicks,wheelDelta,modifiers]
+				println(m[0] + " at " + m[1] + "," + m[2] + " btn=" + m[3]);
+			}
+		}
+
+		var s = Gfx_GetMouseState();
+		if(s != null) {
+			// [x,y,buttonsMask,wheelAccum,modifiers]
+			println("state x=" + s[0] + " y=" + s[1] + " buttons=" + s[2]);
+		}
+		
 		yield;
 		
 	}
@@ -37,7 +64,7 @@ function draw() {
         Gfx_SetColour(0, 0, 0);
         Gfx_DrawEllipse(index, 200, index / 4, index / 4);
 		
-		for (var p = 0; p < 2000; p++);
+		//for (var p = 0; p < 500; p++);
 		
 		if(index > 380) {
 			Gfx_Clear();
