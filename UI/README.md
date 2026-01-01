@@ -43,8 +43,7 @@ function addCurrentText() {
     if (s == null) s = "";
     if (s == "") return;
 
-    // wenn dein ScriptStack keine String-Methoden hat, diese Zeile entfernen
-    if (ui.GetChecked(chkUpper)) s = s.toUpperCase();
+    if (ui.GetChecked(chkUpper)) s = s.toUpper();
 
     ui.AddItem(lstItems, s);
 
@@ -114,7 +113,7 @@ function handleEvents() {
 function main() {
     running = true;
 
-    setupUi();
+    run setupUi();
     if (!running) return;
 
     while (running) {
