@@ -1,3 +1,10 @@
+Die ButtonsMask ist eine Bitmask "welche Buttons sind gerade gedrückt":
+- 1 = Left gedrückt
+- 2 = Right gedrückt
+- 4 = Middle gedrückt (Mausrad-Klick)
+- 8 = X1 gedrückt
+- 16 = X2 gedrückt
+
 ```Javascript
 var running;
 
