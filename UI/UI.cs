@@ -139,11 +139,9 @@ namespace StackShell
             c.MouseWheel += (_, e) =>
                 Enqueue(new UiEvt { Type = "mousewheel", Id = id, I0 = e.X, I1 = e.Y, I2 = e.Delta });
 
-            c.MouseClick += (_, e) =>
-                Enqueue(new UiEvt { Type = "click", Id = id });
+            c.Click += (_, __) => Enqueue(new UiEvt { Type = "click", Id = id });
 
-            c.MouseDoubleClick += (_, e) =>
-                Enqueue(new UiEvt { Type = "dblclick", Id = id });
+            c.DoubleClick += (_, __) => Enqueue(new UiEvt { Type = "dblclick", Id = id });
 
             // Keys
             c.KeyDown += (_, e) =>
@@ -156,10 +154,6 @@ namespace StackShell
                 Enqueue(new UiEvt { Type = "keypress", Id = id, S0 = e.KeyChar.ToString(), I1 = ModsFromKeys(Control.ModifierKeys) });
 
             // Control-spezifisch
-            if (c is Button btn)
-            {
-                btn.Click += (_, __) => Enqueue(new UiEvt { Type = "click", Id = id });
-            }
             if (c is TextBoxBase tb)
             {
                 tb.TextChanged += (_, __) => Enqueue(new UiEvt { Type = "textchanged", Id = id, S0 = tb.Text ?? "" });
@@ -504,6 +498,8 @@ namespace StackShell
 
             // events
             list.Add(new Routine((Type)null, "ui.PollEvent"));
+
+            list.Add(new Routine(typeBool, "ui.RemoveItem", typeInt, typeInt));
 
             s_listRoutines = list.AsReadOnly();
         }
@@ -932,6 +928,36 @@ namespace StackShell
                     }
                     catch { return -1; }
                 }, -1);
+            }
+
+            if (strFunctionName == "ui.RemoveItem")
+            {
+                int id = (int)listParameters[0];
+                int idx = (int)listParameters[1];
+
+                var c = GetControl(id);
+                if (c == null) return false;
+
+                return RunOnUi(() =>
+                {
+                    try
+                    {
+                        if (c is ListBox lb)
+                        {
+                            if (idx < 0 || idx >= lb.Items.Count) return false;
+                            lb.Items.RemoveAt(idx);
+                            return true;
+                        }
+                        if (c is ComboBox cb)
+                        {
+                            if (idx < 0 || idx >= cb.Items.Count) return false;
+                            cb.Items.RemoveAt(idx);
+                            return true;
+                        }
+                        return false;
+                    }
+                    catch { return false; }
+                }, false);
             }
 
             return false;
