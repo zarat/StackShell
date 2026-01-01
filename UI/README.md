@@ -2,49 +2,62 @@ Plugin zum Erstellen von Windows Forms mit Steuerelementen
 
 ```Javascript
 var running;
-var formOpen;
+
 var lblText;
 var txtInput;
 var btnAdd;
+var btnRemove;
 var btnClear;
 var lstItems;
+
 var chkUpper;
+var chkAutoClear;
 var lblInfo;
-var id, type, keyCode, e;
+
+var e, id, type, key;
+var s;
+var idx;
+var isOn;
 
 function setupUi() {
-    // Main-Form (w,h,title)
-    if (!ui.Initialise(640, 420, "UI Demo")) {
+    if (!ui.Initialise(640, 460, "UI Demo")) {
         running = false;
         return;
     }
 
-    // Controls (type, parentId, x,y,w,h, text)
-    lblText  = ui.CreateControl("label", 0, 12, 14, 60, 22, "Text:");
-    txtInput = ui.CreateControl("textbox", 0, 80, 12, 360, 26, "");
-    btnAdd   = ui.CreateControl("button", 0, 452, 12, 80, 26, "Add");
-    btnClear = ui.CreateControl("button", 0, 540, 12, 80, 26, "Clear");
+    lblText   = ui.CreateControl("label",    0, 12, 14, 60, 22, "Text:");
+    txtInput  = ui.CreateControl("textbox",  0, 80, 12, 300, 26, "");
+    btnAdd    = ui.CreateControl("button",   0, 392, 12, 70, 26, "Add");
+    btnRemove = ui.CreateControl("button",   0, 470, 12, 80, 26, "Remove");
+    btnClear  = ui.CreateControl("button",   0, 558, 12, 70, 26, "Clear");
 
-    chkUpper = ui.CreateControl("checkbox", 0, 12, 46, 200, 22, "UPPERCASE");
-    lblInfo  = ui.CreateControl("label", 0, 230, 46, 390, 22, "Enter = Add, ESC = Quit");
+    chkUpper     = ui.CreateControl("checkbox", 0, 12, 46, 200, 22, "UPPERCASE");
+    chkAutoClear = ui.CreateControl("checkbox", 0, 230, 46, 220, 22, "Auto-clear input");
+    lblInfo      = ui.CreateControl("label",    0, 470, 46, 158, 22, "ESC=Quit");
 
-    lstItems = ui.CreateControl("listbox", 0, 12, 76, 610, 300, "");
-
-    // ui.SetBackColor(lstItems, 250, 250, 250);
+    lstItems  = ui.CreateControl("listbox",  0, 12, 76, 616, 360, "");
 }
 
 function addCurrentText() {
-    var s = ui.GetText(txtInput);
+    s = ui.GetText(txtInput);
     if (s == null) s = "";
-
     if (s == "") return;
 
-    if (ui.GetChecked(chkUpper)) {
-        s = s.toUpper();
-    }
+    // wenn dein ScriptStack keine String-Methoden hat, diese Zeile entfernen
+    if (ui.GetChecked(chkUpper)) s = s.toUpperCase();
 
     ui.AddItem(lstItems, s);
-    ui.SetText(txtInput, "");
+
+    if (ui.GetChecked(chkAutoClear)) {
+        ui.SetText(txtInput, "");
+    }
+}
+
+function removeSelected() {
+    idx = ui.GetSelectedIndex(lstItems);
+    if (idx < 0) return;
+
+    ui.RemoveItem(lstItems, idx);
 }
 
 function clearList() {
@@ -59,57 +72,41 @@ function handleEvents() {
         type = e[0];
         id   = e[1];
 
-        // ---- Window close ----
         if (type == "formclosing") {
-            // i0 == 1 => user closing
             running = false;
         }
 
-        // ---- Button clicks ----
         if (type == "click") {
-            if (id == btnAdd) {
-                addCurrentText();
+            if (id == btnAdd) addCurrentText();
+            if (id == btnRemove) removeSelected();
+            if (id == btnClear) clearList();
+        }
+
+        if (type == "checkedchanged") {
+            if (id == chkUpper) {
+                isOn = (e[2] != 0);
+                if (isOn) ui.SetText(lblInfo, "UPPERCASE ON");
+                else ui.SetText(lblInfo, "UPPERCASE OFF");
             }
-            if (id == btnClear) {
-                clearList();
+
+            if (id == chkAutoClear) {
+                isOn = (e[2] != 0);
+                if (isOn) ui.SetText(lblInfo, "Auto-clear ON");
+                else ui.SetText(lblInfo, "Auto-clear OFF");
             }
         }
 
-        // ---- TextBox Enter ----
-        if (type == "keydown" && id == txtInput) {
-            keyCode = e[2];    // i0
-            // var mods = e[3];    // i1 bitmask shift/ctrl/alt
-
-            // Keys.Enter = 13 (wie in deinem Pong Beispiel)
-            if (keyCode == 13) {
-                addCurrentText();
-            }
-
-            // Keys.Escape = 27
-            if (keyCode == 27) {
-                running = false;
-            }
-        }
-
-        // ---- Global ESC (auch wenn Fokus woanders ist) ----
         if (type == "keydown") {
-            var keyCode2 = e[2];
-            if (keyCode2 == 27) running = false;
-        }
+            key = e[2];
 
-        // ---- Checkbox changed ----
-        if (type == "checkedchanged" && id == chkUpper) {
-            var isOn = (e[2] != 0); // i0
-            if (isOn) {
-                ui.SetText(lblInfo, "UPPERCASE ON");
-            } else {
-                ui.SetText(lblInfo, "UPPERCASE OFF");
-            }
-        }
+            // ESC quit
+            if (key == 27) running = false;
 
-        // ---- Double click on list => remove all (Demo) ----
-        if (type == "dblclick" && id == lstItems) {
-            clearList();
+            // Enter in textbox => add
+            if (id == txtInput && key == 13) addCurrentText();
+
+            // Delete in listbox => remove selected (Keys.Delete meist 46)
+            if (id == lstItems && key == 46) removeSelected();
         }
     }
 }
