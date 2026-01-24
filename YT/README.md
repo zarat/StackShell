@@ -1,7 +1,7 @@
 ```Javascript
 function main()
 {
-	var video = yt_get_manifest("https://www.youtube.com/watch?v=zEpqhgL7l8U");
+	var video = yt_get_manifest("https://www.youtube.com/watch?v=cQ5q0Y5T6x8");
 	var k, v;
 	
 	foreach(k, v in video["audioOnly"])
