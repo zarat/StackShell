@@ -1,0 +1,27 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA1
+
+[LicenseInfo]
+Owner = Jango Zarat private account
+Id = 2236668
+LicenseString = a28b62788f1e7da4f1b5f62a88245276
+Revision = 1
+
+[LicenseOptions]
+Type = UNLIMITED
+RegistrationDate = 02/19/2026
+ExpirationDate = Never
+LicenseMode = ondemand
+UserLimit = 9999
+ConcurrentConnections = 999999
+Special = None
+SiteWideLicense = OFF
+ClusterNodes = 0
+OEM = off
+
+-----BEGIN PGP SIGNATURE-----
+
+iEYEARECAAYFAmmW13sACgkQ+ts+PoSKFF1RYACcDwBc0c5xygbRpvLeP/RSl2CI
+T3QAn3dXhaCou/ABRBNa6srycOKD+V/N
+=osxv
+-----END PGP SIGNATURE-----
